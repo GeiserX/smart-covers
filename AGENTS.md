@@ -152,6 +152,7 @@ Version in `JellyCovers.csproj` (`<AssemblyVersion>` + `<FileVersion>`) must mat
 - Modify the CI/CD workflow
 - Change supported item types (`Supports()` method)
 - Add new API endpoints
+- Restart Jellyfin — always confirm before restarting, as it interrupts active streams for all users
 
 ### Never
 
