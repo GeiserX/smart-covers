@@ -165,6 +165,7 @@
                         relevant.forEach(function (lib) {
                             BookCoverConfig.libraryCache[lib.ItemId] = lib;
                             var row = document.createElement('tr');
+                            var hasBookCover = BookCoverConfig.isEnabled(lib);
 
                             var nameCell = document.createElement('td');
                             nameCell.textContent = lib.Name;
@@ -174,27 +175,31 @@
 
                             var statusCell = document.createElement('td');
                             statusCell.style.textAlign = 'center';
-
-                            var hasBookCover = BookCoverConfig.isEnabled(lib);
-
-                            var chk = document.createElement('input');
-                            chk.setAttribute('is', 'emby-checkbox');
-                            chk.type = 'checkbox';
-                            chk.checked = hasBookCover;
-                            chk.onchange = (function (id) {
-                                return function () { BookCoverConfig.toggleLibrary(id, this.checked, this); };
-                            })(lib.ItemId);
-                            statusCell.appendChild(chk);
+                            statusCell.id = 'status_' + lib.ItemId;
+                            statusCell.innerHTML = hasBookCover
+                                ? '<span style="color:#52B54B;">&#10003; Enabled</span>'
+                                : '<span style="opacity:0.5;">&#10005; Disabled</span>';
 
                             var actionsCell = document.createElement('td');
                             actionsCell.style.textAlign = 'right';
                             actionsCell.style.whiteSpace = 'nowrap';
+
+                            var toggleBtn = document.createElement('button');
+                            toggleBtn.setAttribute('is', 'emby-button');
+                            toggleBtn.className = 'raised';
+                            toggleBtn.id = 'toggleBtn_' + lib.ItemId;
+                            toggleBtn.innerHTML = hasBookCover ? '<span>Disable</span>' : '<span>Enable</span>';
+                            toggleBtn.onclick = (function (id) {
+                                return function () { BookCoverConfig.toggleLibrary(id, !BookCoverConfig.isEnabled(BookCoverConfig.libraryCache[id])); };
+                            })(lib.ItemId);
+                            actionsCell.appendChild(toggleBtn);
 
                             var scanBtn = document.createElement('button');
                             scanBtn.setAttribute('is', 'emby-button');
                             scanBtn.className = 'raised';
                             scanBtn.innerHTML = '<span>Refresh Images</span>';
                             scanBtn.style.display = hasBookCover ? '' : 'none';
+                            scanBtn.style.marginLeft = '0.5em';
                             scanBtn.id = 'scanBtn_' + lib.ItemId;
                             scanBtn.onclick = (function (id, name) {
                                 return function () {
@@ -243,9 +248,12 @@
                     return false;
                 },
 
-                toggleLibrary: function (libraryId, enable, checkbox) {
+                toggleLibrary: function (libraryId, enable) {
                     var lib = BookCoverConfig.libraryCache[libraryId];
                     if (!lib) return;
+
+                    var toggleBtn = document.querySelector('#toggleBtn_' + libraryId);
+                    if (toggleBtn) { toggleBtn.disabled = true; toggleBtn.innerHTML = '<span>Saving...</span>'; }
 
                     var opts = lib.LibraryOptions || {};
                     if (!opts.TypeOptions) opts.TypeOptions = [];
@@ -281,22 +289,34 @@
                         }
                     });
 
-                    checkbox.disabled = true;
                     ApiClient.ajax({
                         type: 'POST',
                         url: ApiClient.getUrl('Library/VirtualFolders/LibraryOptions'),
                         data: JSON.stringify({ Id: libraryId, LibraryOptions: opts }),
                         contentType: 'application/json'
                     }).then(function () {
-                        checkbox.disabled = false;
                         lib.LibraryOptions = opts;
+
+                        var statusCell = document.querySelector('#status_' + libraryId);
+                        if (statusCell) {
+                            statusCell.innerHTML = enable
+                                ? '<span style="color:#52B54B;">&#10003; Enabled</span>'
+                                : '<span style="opacity:0.5;">&#10005; Disabled</span>';
+                        }
+                        if (toggleBtn) {
+                            toggleBtn.disabled = false;
+                            toggleBtn.innerHTML = enable ? '<span>Disable</span>' : '<span>Enable</span>';
+                        }
                         var scanBtn = document.querySelector('#scanBtn_' + libraryId);
                         if (scanBtn) scanBtn.style.display = enable ? '' : 'none';
+
                         Dashboard.alert('Book Cover ' + (enable ? 'enabled' : 'disabled') + ' for "' + lib.Name + '".');
                     }).catch(function (error) {
                         console.error('BookCover: error toggling library', error);
-                        checkbox.disabled = false;
-                        checkbox.checked = !enable;
+                        if (toggleBtn) {
+                            toggleBtn.disabled = false;
+                            toggleBtn.innerHTML = enable ? '<span>Enable</span>' : '<span>Disable</span>';
+                        }
                         Dashboard.alert('Error updating library settings. Check server logs.');
                     });
                 }
