@@ -46,9 +46,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
                     CultureInfo.InvariantCulture,
                     "{0}.Configuration.configPage.html",
                     GetType().Namespace),
-                MenuSection = "server",
-                MenuIcon = "book",
-                DisplayName = "Book Cover"
+                EnableInMainMenu = true
             }
         ];
     }
