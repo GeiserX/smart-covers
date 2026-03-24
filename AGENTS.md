@@ -181,6 +181,19 @@ Version in `JellyCovers.csproj` (`<AssemblyVersion>` + `<FileVersion>`) must mat
 | No online covers | Disabled or no internet | Check toggle in settings; verify access to `openlibrary.org`, `googleapis.com` |
 | Config page not in sidebar | `EnableInMainMenu` missing | Verify `Plugin.cs` returns it in `PluginPageInfo` |
 
+## Learned Patterns
+
+Things discovered during development that save time and prevent mistakes:
+
+- **Sidebar visibility**: `EnableInMainMenu = true` on `PluginPageInfo` is the ONLY way to get a plugin config page into Jellyfin's dashboard sidebar. `MenuSection`, `MenuIcon`, and `DisplayName` properties do NOT exist — don't waste time trying them.
+- **Config page styling**: NEVER use custom CSS. Jellyfin's built-in `emby-*` components and standard classes (`inputContainer`, `fieldDescription`, etc.) handle everything. Custom styling breaks across Jellyfin themes.
+- **Library API**: `GET Library/VirtualFolders` returns libraries. Each has `LibraryOptions.TypeOptions[].ImageFetchers[]` — an array of enabled provider names. `POST Library/VirtualFolders/LibraryOptions` with the full `LibraryOptions` object updates them. You must send the complete object, not a partial update.
+- **Provider name in library configs**: When users enabled "Book Cover" in their libraries, that string is stored in `ImageFetchers`. The config page must check for BOTH `"Jelly Covers"` and `"Book Cover"` when showing status, and replace the old name on toggle. Do not remove this backward compatibility.
+- **Memory footprint**: The plugin processes one item at a time, returns one small `MemoryStream` per extraction (typically <1 MB). No caching, no buffering across items. It has been verified NOT to contribute to Jellyfin memory issues during library scans.
+- **CI manifest workaround**: The `stefanzweifel/git-auto-commit-action` step in the release workflow always fails due to branch protection rules. This is expected. The manual steps (download zip → sha256sum → update manifest.json → push) are the permanent workflow.
+- **Awesome-list PRs**: Open PRs exist at `awesome-jellyfin/awesome-jellyfin` and `quozd/awesome-dotnet` referencing this plugin. If the plugin is renamed again, those PRs need updating (branch content + PR title/body).
+- **Deploy path on production**: The Jellyfin instance runs on `watchtower` (Unraid). Plugin path: `/mnt/user/appdata/arr/jellyfin/config/plugins/JellyCovers_<version>/`. Old plugin folders may have FUSE hidden files while Jellyfin is running — restart first, then delete.
+
 ## ⚠️ Security Notice
 
 > **Do not commit secrets to the repository or to the live app.**
