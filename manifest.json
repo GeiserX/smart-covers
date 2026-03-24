@@ -2,19 +2,19 @@
   {
     "guid": "82eef869-3f18-4678-968d-06efc10b60cf",
     "name": "Book Cover",
-    "overview": "Fallback cover extraction for books (PDF, EPUB) and audiobooks (MP3, M4A, M4B, FLAC).",
-    "description": "Fallback cover provider for Jellyfin book and audiobook libraries. Extracts PDF first pages, searches EPUB archives for covers, and extracts embedded artwork from audio files via ffmpeg raw stream copy — handling mislabeled codec tags that break the built-in Image Extractor.",
+    "overview": "Cover extraction for books (PDF, EPUB) and audiobooks, with online fallback via Open Library & Google Books.",
+    "description": "Cover provider for Jellyfin book and audiobook libraries. Extracts PDF first pages via pdftoppm, searches EPUB archives for cover images, and extracts embedded artwork from audio files via ffmpeg. When local extraction fails, automatically fetches covers from Open Library and Google Books as a last resort. Supports folder-based audiobooks, sidecar images, and handles mislabeled codec tags in ID3.",
     "owner": "GeiserX",
     "category": "Books",
     "imageUrl": "",
     "versions": [
       {
-        "version": "3.0.0.0",
-        "changelog": "See https://github.com/GeiserX/jellyfin-plugin-book-cover/releases/tag/v3.0.0.0",
+        "version": "4.0.1.0",
+        "changelog": "See https://github.com/GeiserX/jellyfin-plugin-book-cover/releases/tag/v4.0.1.0",
         "targetAbi": "10.11.0.0",
-        "sourceUrl": "https://github.com/GeiserX/jellyfin-plugin-book-cover/releases/download/v3.0.0.0/book-cover.zip",
-        "checksum": "95c9a1b6e6d47cde504569d8ea9a74afea8ee6b95d3bf07445e90bda4c083efa",
-        "timestamp": "2026-02-28T21:30:27Z"
+        "sourceUrl": "https://github.com/GeiserX/jellyfin-plugin-book-cover/releases/download/v4.0.1.0/book-cover.zip",
+        "checksum": "520e984780f0f99a781b7202f2f40d6b2782259a022f3c93ab0f4d073ba848fe",
+        "timestamp": "2026-03-24T15:51:02Z"
       }
     ]
   }
