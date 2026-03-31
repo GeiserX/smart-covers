@@ -7,6 +7,11 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -43,8 +48,6 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
-    permissions:
-      contents: write
 
     steps:
       - name: Checkout
@@ -106,3 +109,26 @@ jobs:
           commit_message: "chore: update manifest.json for v${{ steps.version.outputs.VERSION }}"
           file_pattern: manifest.json
           branch: main
+
+  deploy-pages:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
