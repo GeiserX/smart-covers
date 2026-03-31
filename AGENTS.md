@@ -13,7 +13,7 @@
 - **URL**: https://github.com/GeiserX/smart-covers
 - **Platform**: GitHub
 - **Plugin GUID**: `82eef869-3f18-4678-968d-06efc10b60cf`
-- **Previous names**: `jellyfin-plugin-book-cover` / "Book Cover" (renamed at v5.0.0.0), `jelly-covers` / "Jelly Covers" (renamed at v6.0.0.0)
+- **Previous names**: `jellyfin-plugin-book-cover` / "Book Cover" (v5.0.0.0), `jelly-covers` / "Jelly Covers" (v6.0.0.0). No backward-compatibility code remains; users on old names must re-enable the provider.
 
 ## Technology Stack
 
@@ -68,10 +68,6 @@ Each method returns a `DynamicImageResponse` with a `MemoryStream`. One image at
 ### Why Raw Stream Copy
 
 Jellyfin's built-in Image Extractor uses ffmpeg to decode embedded artwork. This fails when the codec tag doesn't match the actual data — common in MP3 files where JPEG art is tagged as PNG in ID3. SmartCovers uses `-vcodec copy` (no decoding) and identifies format from magic bytes.
-
-### Backward Compatibility
-
-Renamed from "Jelly Covers" at v6.0.0.0 (previously "Book Cover" at v5.0.0.0). Config page checks all legacy provider names (`legacyNames: ['Jelly Covers', 'Book Cover']`). When toggling a library, removes legacy names and adds new one. GUID unchanged.
 
 ### Online Cover Fetching
 
@@ -159,7 +155,6 @@ Version in `SmartCovers.csproj` (`<AssemblyVersion>` + `<FileVersion>`) must mat
 - Commit secrets or API keys
 - Force push to git
 - Reuse existing version tags
-- Remove backward compatibility for legacy "Book Cover" or "Jelly Covers" names (users may still have them configured)
 - Use string concatenation for process arguments (command injection risk)
 
 ## Code Style
@@ -189,7 +184,6 @@ Things discovered during development that save time and prevent mistakes:
 - **Sidebar visibility**: `EnableInMainMenu = true` on `PluginPageInfo` is the ONLY way to get a plugin config page into Jellyfin's dashboard sidebar. `MenuSection`, `MenuIcon`, and `DisplayName` properties do NOT exist — don't waste time trying them.
 - **Config page styling**: NEVER use custom CSS. Jellyfin's built-in `emby-*` components and standard classes (`inputContainer`, `fieldDescription`, etc.) handle everything. Custom styling breaks across Jellyfin themes.
 - **Library API**: `GET Library/VirtualFolders` returns libraries. Each has `LibraryOptions.TypeOptions[].ImageFetchers[]` — an array of enabled provider names. `POST Library/VirtualFolders/LibraryOptions` with the full `LibraryOptions` object updates them. You must send the complete object, not a partial update.
-- **Provider name in library configs**: When users enabled "Book Cover" or "Jelly Covers" in their libraries, those strings are stored in `ImageFetchers`. The config page must check for ALL of `"SmartCovers"`, `"Jelly Covers"`, and `"Book Cover"` when showing status, and replace old names on toggle. Do not remove this backward compatibility.
 - **Memory footprint**: The plugin processes one item at a time, returns one small `MemoryStream` per extraction (typically <1 MB). No caching, no buffering across items. It has been verified NOT to contribute to Jellyfin memory issues during library scans.
 - **CI manifest workaround**: The `stefanzweifel/git-auto-commit-action` step in the release workflow always fails due to branch protection rules. This is expected. The manual steps (download zip → md5sum → update manifest.json → push) are the permanent workflow.
 - **Awesome-list PRs**: Open PRs exist at `awesome-jellyfin/awesome-jellyfin` and `quozd/awesome-dotnet` referencing this plugin. If the plugin is renamed again, those PRs need updating (branch content + PR title/body).

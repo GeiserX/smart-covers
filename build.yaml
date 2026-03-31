@@ -16,8 +16,7 @@ owner: "GeiserX"
 artifacts:
   - "SmartCovers.dll"
 changelog: >
-  v6.0.0: Renamed to SmartCovers (Jellyfin branding compliance). Backward
-  compatible with existing Jelly Covers and Book Cover library configurations.
+  v6.0.0: Renamed to SmartCovers (Jellyfin branding compliance).
   v5.0.0: Renamed to Jelly Covers. New namespace, config page with native Jellyfin
   components, per-library enable/disable toggle, dashboard sidebar entry.
   v4.0.0: Online cover fetching via Open Library and Google Books.

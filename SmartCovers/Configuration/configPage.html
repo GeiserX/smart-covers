@@ -74,7 +74,6 @@
             var SmartCoversConfig = {
                 pluginId: '82eef869-3f18-4678-968d-06efc10b60cf',
                 providerName: 'SmartCovers',
-                legacyNames: ['Jelly Covers', 'Book Cover'],
 
                 loadConfiguration: function (page) {
                     ApiClient.getPluginConfiguration(SmartCoversConfig.pluginId).then(function (config) {
@@ -243,13 +242,9 @@
                     var typeOptions = lib.LibraryOptions && lib.LibraryOptions.TypeOptions;
                     if (!typeOptions || !Array.isArray(typeOptions)) return false;
                     var name = SmartCoversConfig.providerName;
-                    var legacies = SmartCoversConfig.legacyNames;
                     for (var i = 0; i < typeOptions.length; i++) {
                         var fetchers = typeOptions[i].ImageFetchers || [];
                         if (fetchers.indexOf(name) !== -1) return true;
-                        for (var j = 0; j < legacies.length; j++) {
-                            if (fetchers.indexOf(legacies[j]) !== -1) return true;
-                        }
                     }
                     return false;
                 },
@@ -267,7 +262,6 @@
                     var ct = (lib.CollectionType || '').toLowerCase();
                     var itemTypes = SmartCoversConfig.typeMap[ct] || ['Book', 'AudioBook'];
                     var name = SmartCoversConfig.providerName;
-                    var legacies = SmartCoversConfig.legacyNames;
 
                     itemTypes.forEach(function (itemType) {
                         var found = false;
@@ -276,14 +270,6 @@
                                 found = true;
                                 if (!to.ImageFetchers) to.ImageFetchers = [];
                                 if (!to.ImageFetcherOrder) to.ImageFetcherOrder = [];
-
-                                // Remove legacy names if present
-                                legacies.forEach(function (legacy) {
-                                    var legacyIdx = to.ImageFetchers.indexOf(legacy);
-                                    if (legacyIdx !== -1) to.ImageFetchers.splice(legacyIdx, 1);
-                                    var legacyOrderIdx = to.ImageFetcherOrder.indexOf(legacy);
-                                    if (legacyOrderIdx !== -1) to.ImageFetcherOrder.splice(legacyOrderIdx, 1);
-                                });
 
                                 var idx = to.ImageFetchers.indexOf(name);
                                 if (enable && idx === -1) {
