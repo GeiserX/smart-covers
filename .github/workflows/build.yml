@@ -37,13 +37,20 @@ jobs:
         run: |
           mkdir -p release
           cp publish/SmartCovers.dll release/
-          cp publish/PDFtoImage.dll release/
+          # Rename PDFtoImage.dll to .lib so Jellyfin's plugin scanner won't
+          # try to load it as a managed assembly (it rejects the SkiaSharp
+          # version mismatch). Plugin.cs registers a resolver at runtime.
+          cp publish/PDFtoImage.dll release/PDFtoImage.lib
           # SkiaSharp is intentionally NOT bundled — Jellyfin already ships it (≥ 3.116.1).
           # PDFtoImage 5.2.1 requires SkiaSharp >= 3.116.1 which Jellyfin satisfies.
           # Bundling a second copy would cause assembly-loading conflicts at runtime.
-          # Bundle native pdfium libraries for all platforms:
-          # linux-x64, linux-arm64, linux-musl-*, osx-*, win-*
-          find publish/runtimes -name "libpdfium*" -o -name "pdfium.dll" | while read f; do
+          # Bundle native pdfium libraries for Linux and macOS.
+          # Windows native pdfium.dll is excluded because Jellyfin's plugin
+          # loader recursively scans for .dll files and tries to load them as
+          # .NET assemblies, which fatally disables the plugin (BadImageFormatException).
+          # Linux .so and macOS .dylib are unaffected. Windows users lose PDF
+          # rendering but all other features (EPUB, audio, online) still work.
+          find publish/runtimes -name "libpdfium*" | while read f; do
             rel="${f#publish/}"
             mkdir -p "release/$(dirname "$rel")"
             cp "$f" "release/$rel"

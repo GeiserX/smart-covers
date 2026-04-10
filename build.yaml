@@ -16,7 +16,7 @@ category: "General"
 owner: "GeiserX"
 artifacts:
   - "SmartCovers.dll"
-  - "PDFtoImage.dll"
+  - "PDFtoImage.lib"
 changelog: >
   v6.0.0: Renamed to SmartCovers (Jellyfin branding compliance).
   v5.0.0: Renamed to Jelly Covers. New namespace, config page with native Jellyfin
