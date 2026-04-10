@@ -104,8 +104,9 @@ public class CoverImageProvider : IDynamicImageProvider
             }
         }
 
-        // Final fallback: fetch cover from online sources
-        if (!result.HasImage)
+        // Final fallback: fetch cover from online sources (books/audiobooks only).
+        // Online fetcher queries Open Library and Google Books — irrelevant for music.
+        if (!result.HasImage && item is not Audio && item is not MusicAlbum)
         {
             result = await GetOnlineCover(item, cancellationToken).ConfigureAwait(false);
         }
@@ -236,8 +237,11 @@ public class CoverImageProvider : IDynamicImageProvider
         {
             // Run synchronous PDFium rendering on a thread-pool thread.
             // Task.Run's token only prevents scheduling — it cannot interrupt
-            // SaveJpeg once it's running. Race against Task.Delay for a real
-            // timeout boundary.
+            // SaveJpeg once it's running. Race against a standalone Task.Delay
+            // for a real timeout boundary. The delay is NOT linked to
+            // cancellationToken so that caller cancellation propagates correctly
+            // through renderTask (via OCE) instead of being misclassified as a
+            // timeout.
             var renderTask = Task.Run(
                 () =>
                 {
@@ -249,34 +253,48 @@ public class CoverImageProvider : IDynamicImageProvider
                 },
                 cancellationToken);
 
-            var completed = await Task.WhenAny(
-                renderTask,
-                Task.Delay(TimeSpan.FromSeconds(timeoutSec), cancellationToken)).ConfigureAwait(false);
+            var timeoutTask = Task.Delay(TimeSpan.FromSeconds(timeoutSec));
+            var completed = await Task.WhenAny(renderTask, timeoutTask).ConfigureAwait(false);
 
-            if (completed != renderTask)
+            if (completed == renderTask)
             {
-                _logger.LogWarning("PDF rendering timed out after {Timeout}s for {Path}", timeoutSec, path);
-                return noImage;
+                // Render finished — await to propagate OCE or other exceptions.
+                var ms = await renderTask.ConfigureAwait(false);
+
+                if (ms.Length == 0)
+                {
+                    ms.Dispose();
+                    return noImage;
+                }
+
+                ms.Position = 0;
+
+                _logger.LogDebug("Rendered PDF cover ({Size} bytes, {Dpi} DPI) from {Path}", ms.Length, dpi, path);
+
+                return new DynamicImageResponse
+                {
+                    HasImage = true,
+                    Stream = ms,
+                    Format = ImageFormat.Jpg
+                };
             }
 
-            var ms = await renderTask.ConfigureAwait(false);
+            // Timeout won the race. Distinguish caller cancellation from real timeout.
+            cancellationToken.ThrowIfCancellationRequested();
 
-            if (ms.Length == 0)
-            {
-                ms.Dispose();
-                return noImage;
-            }
+            _logger.LogWarning("PDF rendering timed out after {Timeout}s for {Path}", timeoutSec, path);
 
-            ms.Position = 0;
+            // Observe the orphaned render task to prevent unobserved exceptions
+            // and dispose the MemoryStream if it eventually completes.
+            _ = renderTask.ContinueWith(
+                static t =>
+                {
+                    if (t.IsCompletedSuccessfully) t.Result.Dispose();
+                    _ = t.Exception;
+                },
+                TaskScheduler.Default);
 
-            _logger.LogDebug("Rendered PDF cover ({Size} bytes, {Dpi} DPI) from {Path}", ms.Length, dpi, path);
-
-            return new DynamicImageResponse
-            {
-                HasImage = true,
-                Stream = ms,
-                Format = ImageFormat.Jpg
-            };
+            return noImage;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -711,7 +729,8 @@ public class CoverImageProvider : IDynamicImageProvider
             }
             else
             {
-                _logger.LogWarning("ffmpeg found but returned non-zero exit code. Audio cover extraction disabled");
+                TryKill(process);
+                _logger.LogWarning("ffmpeg probe timed out or returned non-zero exit code. Audio cover extraction disabled");
                 _ffmpegPath = null;
             }
         }
