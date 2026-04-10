@@ -1,20 +1,22 @@
 ---
 name: "SmartCovers"
 guid: "82eef869-3f18-4678-968d-06efc10b60cf"
-version: "6.0.0.0"
+version: "7.0.0.0"
 targetAbi: "10.11.0.0"
 framework: "net9.0"
 overview: "Cover extraction for books, audiobooks, comics, and music — with online fallback via Open Library & Google Books"
 description: >
-  Cover provider for Jellyfin libraries. Extracts PDF first pages via pdftoppm,
+  Cover provider for Jellyfin libraries. Renders PDF first pages via built-in PDFium,
   searches EPUB archives for cover images, and extracts embedded artwork from audio
   files via ffmpeg. When local extraction fails, automatically fetches covers from
-  Open Library and Google Books as a last resort. Supports folder-based audiobooks,
-  sidecar images, and handles mislabeled codec tags in ID3.
+  Open Library and Google Books as a last resort. No external tools required for PDF
+  or EPUB extraction. Supports folder-based audiobooks, sidecar images, and handles
+  mislabeled codec tags in ID3.
 category: "General"
 owner: "GeiserX"
 artifacts:
   - "SmartCovers.dll"
+  - "PDFtoImage.dll"
 changelog: >
   v6.0.0: Renamed to SmartCovers (Jellyfin branding compliance).
   v5.0.0: Renamed to Jelly Covers. New namespace, config page with native Jellyfin

@@ -43,7 +43,7 @@
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="txtTimeout">Timeout (seconds)</label>
                         <input type="number" id="txtTimeout" min="5" max="120" step="1" class="emby-input" />
-                        <div class="fieldDescription">Maximum time for pdftoppm or ffmpeg to process a single file. Default: 30.</div>
+                        <div class="fieldDescription">Maximum time for ffmpeg to extract audio cover art. Default: 30.</div>
                     </div>
 
                     <button is="emby-button" type="submit" class="raised button-submit block">
@@ -106,10 +106,8 @@
                     ApiClient.getJSON(ApiClient.getUrl('SmartCovers/Status')).then(function (status) {
                         var lines = [];
 
-                        if (status.PdftoppmAvailable) {
-                            lines.push('<p style="color:#52B54B;">&#10003; pdftoppm detected &mdash; PDF cover extraction is active.</p>');
-                        } else {
-                            lines.push('<p style="color:#CC7B19;">&#10007; pdftoppm not found. Install <code>poppler-utils</code> for PDF cover extraction.</p>');
+                        if (status.PdfRenderingAvailable) {
+                            lines.push('<p style="color:#52B54B;">&#10003; PDF rendering available (built-in PDFium).</p>');
                         }
 
                         if (status.FfmpegAvailable) {

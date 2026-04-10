@@ -25,7 +25,7 @@ jobs:
         run: dotnet restore SmartCovers/SmartCovers.csproj
 
       - name: Build
-        run: dotnet build SmartCovers/SmartCovers.csproj -c Release --no-restore
+        run: dotnet publish SmartCovers/SmartCovers.csproj -c Release --no-restore -o publish
 
       - name: Get version from csproj
         id: version
@@ -36,7 +36,14 @@ jobs:
       - name: Create plugin package
         run: |
           mkdir -p release
-          cp SmartCovers/bin/Release/net9.0/SmartCovers.dll release/
+          cp publish/SmartCovers.dll release/
+          cp publish/PDFtoImage.dll release/
+          # Bundle native pdfium libraries (all platforms)
+          find publish/runtimes -name "libpdfium*" -o -name "pdfium.dll" | while read f; do
+            rel="${f#publish/}"
+            mkdir -p "release/$(dirname "$rel")"
+            cp "$f" "release/$rel"
+          done
           cp build.yaml release/
           cd release && zip -r ../smart-covers_${{ steps.version.outputs.version }}.zip .
 
@@ -58,7 +65,7 @@ jobs:
               "guid": "82eef869-3f18-4678-968d-06efc10b60cf",
               "name": "SmartCovers",
               "overview": "Cover extraction for books, audiobooks, comics, and music — with online fallback via Open Library & Google Books.",
-              "description": "Cover provider for Jellyfin libraries. Extracts PDF first pages via pdftoppm, searches EPUB archives for cover images, and extracts embedded artwork from audio files via ffmpeg. When local extraction fails, automatically fetches covers from Open Library and Google Books as a last resort.",
+              "description": "Cover provider for Jellyfin libraries. Renders PDF first pages via built-in PDFium (no external tools needed), searches EPUB archives for cover images, and extracts embedded artwork from audio files via ffmpeg. When local extraction fails, automatically fetches covers from Open Library and Google Books as a last resort.",
               "owner": "GeiserX",
               "category": "General",
               "versions": [

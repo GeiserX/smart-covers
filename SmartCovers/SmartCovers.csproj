@@ -3,10 +3,11 @@
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
     <RootNamespace>SmartCovers</RootNamespace>
-    <AssemblyVersion>6.0.0.0</AssemblyVersion>
-    <FileVersion>6.0.0.0</FileVersion>
+    <AssemblyVersion>7.0.0.0</AssemblyVersion>
+    <FileVersion>7.0.0.0</FileVersion>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <NoWarn>CA1416</NoWarn>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
@@ -15,6 +16,7 @@
     <PackageReference Include="Jellyfin.Controller" Version="10.11.*" />
     <PackageReference Include="Jellyfin.Model" Version="10.11.*" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.*" />
+    <PackageReference Include="PDFtoImage" Version="4.*" />
   </ItemGroup>
 
   <ItemGroup>
