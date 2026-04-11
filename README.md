@@ -8,6 +8,7 @@
 
 <p align="center">
   <a href="https://github.com/GeiserX/smart-covers/releases/latest"><img src="https://img.shields.io/github/v/release/GeiserX/smart-covers?style=flat-square&color=6B4C9A" alt="Latest Release"/></a>
+  <a href="https://github.com/GeiserX/smart-covers/actions/workflows/build.yml"><img src="https://img.shields.io/github/actions/workflow/status/GeiserX/smart-covers/build.yml?branch=main&style=flat-square&label=tests" alt="Tests"/></a>
   <a href="https://github.com/GeiserX/smart-covers/actions"><img src="https://img.shields.io/github/actions/workflow/status/GeiserX/smart-covers/build.yml?branch=main&style=flat-square" alt="Build Status"/></a>
   <a href="https://github.com/GeiserX/smart-covers/blob/main/LICENSE"><img src="https://img.shields.io/github/license/GeiserX/smart-covers?style=flat-square&color=AA5CC3" alt="License"/></a>
   <img src="https://img.shields.io/badge/Jellyfin-10.11%2B-6B4C9A?style=flat-square" alt="Jellyfin 10.11+"/>
