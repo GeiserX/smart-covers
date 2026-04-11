@@ -27,6 +27,9 @@ jobs:
       - name: Build
         run: dotnet publish SmartCovers/SmartCovers.csproj -c Release --no-restore -o publish
 
+      - name: Test
+        run: dotnet test SmartCovers.Tests/SmartCovers.Tests.csproj --configuration Release --verbosity normal
+
       - name: Get version from csproj
         id: version
         run: |

@@ -23,4 +23,8 @@
     <EmbeddedResource Include="Configuration/configPage.html" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="SmartCovers.Tests" />
+  </ItemGroup>
+
 </Project>
