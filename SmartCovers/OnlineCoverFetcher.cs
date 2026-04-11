@@ -120,8 +120,51 @@ public class OnlineCoverFetcher
             }
         }
 
+        // Try Jellyfin's own metadata for author (AudioBook/Audio items may have it)
+        var metadataAuthor = GetItemAuthor(item);
+
+        // If we found an author from metadata, remove it from the cleaned title
+        if (!string.IsNullOrEmpty(metadataAuthor))
+        {
+            var authorIdx = cleaned.IndexOf(metadataAuthor, StringComparison.OrdinalIgnoreCase);
+            if (authorIdx >= 0)
+            {
+                cleaned = cleaned.Remove(authorIdx, metadataAuthor.Length).Trim();
+            }
+
+            return (cleaned, metadataAuthor);
+        }
+
         // Fallback: use author extracted from (year, author) pattern
         return (cleaned.Trim(), parenAuthor);
+    }
+
+    /// <summary>
+    /// Tries to extract an author name from Jellyfin's own item metadata
+    /// (AlbumArtists, Artists, or People with PersonType "Author").
+    /// </summary>
+    private static string? GetItemAuthor(BaseItem item)
+    {
+        // AudioBook items may store the narrator/author in AlbumArtists
+        if (item is MediaBrowser.Controller.Entities.Audio.IHasAlbumArtist albumItem)
+        {
+            var artist = albumItem.AlbumArtists?.FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(artist))
+            {
+                return artist;
+            }
+        }
+
+        if (item is MediaBrowser.Controller.Entities.Audio.IHasArtist artistItem)
+        {
+            var artist = artistItem.Artists?.FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(artist))
+            {
+                return artist;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -148,7 +191,7 @@ public class OnlineCoverFetcher
             return result;
         }
 
-        // Retry Open Library with title only (no author) for broader matching
+        // Retry with title only (no author) for broader matching
         if (!string.IsNullOrEmpty(author))
         {
             result = await TryOpenLibraryAsync(title, null, cancellationToken).ConfigureAwait(false);
@@ -156,9 +199,37 @@ public class OnlineCoverFetcher
             {
                 return result;
             }
+
+            result = await TryGoogleBooksAsync(title, null, cancellationToken).ConfigureAwait(false);
+            if (result != null)
+            {
+                return result;
+            }
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Attempts to fetch a cover using the item's OriginalTitle (often the English
+    /// title for non-English libraries). Called as a final fallback when searches
+    /// with the localized title fail.
+    /// </summary>
+    public async Task<(MemoryStream Stream, ImageFormat Format)?> FetchCoverByOriginalTitleAsync(
+        BaseItem item, CancellationToken cancellationToken)
+    {
+        var originalTitle = item.OriginalTitle;
+        if (string.IsNullOrWhiteSpace(originalTitle)
+            || string.Equals(originalTitle, item.Name, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        _logger.LogDebug("Retrying online cover fetch with OriginalTitle: '{Title}'", originalTitle);
+        var (cleanTitle, author) = ParseBookInfo(item);
+
+        // Use the original title but keep the parsed author
+        return await FetchCoverAsync(originalTitle, author, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<(MemoryStream Stream, ImageFormat Format)?> TryOpenLibraryAsync(

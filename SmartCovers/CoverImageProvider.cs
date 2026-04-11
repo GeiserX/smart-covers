@@ -614,6 +614,10 @@ public class CoverImageProvider : IDynamicImageProvider
             _logger.LogDebug("Attempting online cover fetch for: '{Title}' by '{Author}'", title, author ?? "(unknown)");
 
             var cover = await _onlineFetcher.FetchCoverAsync(title, author, cancellationToken).ConfigureAwait(false);
+
+            // Fallback: retry with OriginalTitle (often the English title for non-English libraries)
+            cover ??= await _onlineFetcher.FetchCoverByOriginalTitleAsync(item, cancellationToken).ConfigureAwait(false);
+
             if (cover == null)
             {
                 _logger.LogDebug("No online cover found for '{Title}'", title);
