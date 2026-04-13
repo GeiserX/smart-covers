@@ -166,16 +166,6 @@ The plugin settings page includes a **Libraries** section where you can enable o
 - [jellyfin-encoder](https://github.com/GeiserX/jellyfin-encoder) — Automatic 720p HEVC/AV1 transcoding service with hardware acceleration
 - [jellyfin-telegram-channel-sync](https://github.com/GeiserX/jellyfin-telegram-channel-sync) — Sync Jellyfin access with Telegram channel membership
 
-
-
-## Related Projects
-
-| Project | Description |
-|---------|-------------|
-| [jellyfin-encoder](https://github.com/GeiserX/jellyfin-encoder) | Automatic 720p HEVC/AV1 transcoding service for Jellyfin with hardware acceleration |
-| [jellyfin-telegram-channel-sync](https://github.com/GeiserX/jellyfin-telegram-channel-sync) | Sync Jellyfin user access with Telegram channel membership |
-| [whisper-subs](https://github.com/GeiserX/whisper-subs) | Jellyfin plugin for local AI-powered subtitle generation using Whisper |
-
 ## License
 
 This project is licensed under the [GNU General Public License v3.0](LICENSE).
