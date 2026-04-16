@@ -1,0 +1,8 @@
+description: "Jellyfin plugin for fallback cover extraction from PDF, EPUB, and audiobook files, with online fallback via Open Library and Google Books."
+personalNote: "Extracts embedded cover images from media files and fetches them from online sources when needed. Supports a wide range of formats including PDF, ePub, CBZ/CBR, and audio files."
+keyFeatures:
+  - "Extracts cover images from books, audiobooks, comics, and magazines"
+  - "Online fallback via Open Library & Google Books"
+  - "Music library cover support"
+  - "Supports PDF, ePub, CBZ/CBR, and audio formats"
+techStack: "C#, Jellyfin Plugin API"
