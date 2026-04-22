@@ -1,7 +1,7 @@
 ---
 name: "SmartCovers"
 guid: "82eef869-3f18-4678-968d-06efc10b60cf"
-version: "7.0.0.0"
+version: "7.1.1.0"
 targetAbi: "10.11.0.0"
 framework: "net9.0"
 overview: "Cover extraction for books, audiobooks, comics, and music — with online fallback via Open Library & Google Books"
