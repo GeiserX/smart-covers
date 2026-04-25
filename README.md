@@ -14,6 +14,7 @@
   <img src="https://img.shields.io/badge/Jellyfin-10.11%2B-6B4C9A?style=flat-square" alt="Jellyfin 10.11+"/>
   <img src="https://img.shields.io/badge/.NET-9.0-512BD4?style=flat-square" alt=".NET 9.0"/>
   <a href="https://github.com/awesome-jellyfin/awesome-jellyfin#readme"><img src="https://img.shields.io/badge/listed%20on-awesome--jellyfin-00a4dc?style=flat-square&logo=jellyfin&logoColor=white" alt="listed on awesome-jellyfin"/></a>
+  <a href="https://codecov.io/gh/GeiserX/smart-covers"><img src="https://codecov.io/gh/GeiserX/smart-covers/graph/badge.svg" alt="codecov"/></a>
 </p>
 
 ---
