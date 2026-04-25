@@ -13,7 +13,7 @@ namespace SmartCovers;
 /// </summary>
 public class OnlineCoverFetcher
 {
-    private static readonly HttpClient Http = CreateHttpClient();
+    private static readonly HttpClient DefaultHttp = CreateHttpClient();
 
     private static readonly Regex FormatTagRegex = new(
         @"\((?:Mp3|M4[ab]|FLAC|OGG|Opus|WAV|WMA|AAC|mp3)[\s\-]*[^)]*\)",
@@ -48,13 +48,24 @@ public class OnlineCoverFetcher
         RegexOptions.Compiled);
 
     private readonly ILogger<OnlineCoverFetcher> _logger;
+    private readonly HttpClient _http;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="OnlineCoverFetcher"/> class.
     /// </summary>
     public OnlineCoverFetcher(ILogger<OnlineCoverFetcher> logger)
+        : this(logger, DefaultHttp)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="OnlineCoverFetcher"/> class
+    /// with an explicit <see cref="HttpClient"/> (used for testing).
+    /// </summary>
+    internal OnlineCoverFetcher(ILogger<OnlineCoverFetcher> logger, HttpClient httpClient)
     {
         _logger = logger;
+        _http = httpClient;
     }
 
     private static HttpClient CreateHttpClient()
@@ -246,7 +257,7 @@ public class OnlineCoverFetcher
             var searchUrl = $"https://openlibrary.org/search.json?{query}&limit=5&fields=title,author_name,cover_i";
             _logger.LogDebug("Open Library search: {Url}", searchUrl);
 
-            var json = await Http.GetStringAsync(searchUrl, ct).ConfigureAwait(false);
+            var json = await _http.GetStringAsync(searchUrl, ct).ConfigureAwait(false);
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
 
@@ -276,7 +287,7 @@ public class OnlineCoverFetcher
             var coverUrl = $"https://covers.openlibrary.org/b/id/{coverId}-L.jpg?default=false";
             _logger.LogDebug("Open Library cover URL: {Url}", coverUrl);
 
-            var imageBytes = await Http.GetByteArrayAsync(coverUrl, ct).ConfigureAwait(false);
+            var imageBytes = await _http.GetByteArrayAsync(coverUrl, ct).ConfigureAwait(false);
             return ValidateImage(imageBytes, $"Open Library (cover {coverId})");
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -300,7 +311,7 @@ public class OnlineCoverFetcher
             var searchUrl = $"https://www.googleapis.com/books/v1/volumes?q={q}&maxResults=3";
             _logger.LogDebug("Google Books search: {Url}", searchUrl);
 
-            var json = await Http.GetStringAsync(searchUrl, ct).ConfigureAwait(false);
+            var json = await _http.GetStringAsync(searchUrl, ct).ConfigureAwait(false);
             using var doc = JsonDocument.Parse(json);
 
             if (!doc.RootElement.TryGetProperty("items", out var items))
@@ -360,7 +371,7 @@ public class OnlineCoverFetcher
 
             _logger.LogDebug("Google Books cover URL: {Url}", highResUrl);
 
-            var imageBytes = await Http.GetByteArrayAsync(highResUrl, ct).ConfigureAwait(false);
+            var imageBytes = await _http.GetByteArrayAsync(highResUrl, ct).ConfigureAwait(false);
             return ValidateImage(imageBytes, "Google Books");
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -370,7 +381,7 @@ public class OnlineCoverFetcher
         }
     }
 
-    private (MemoryStream Stream, ImageFormat Format)? ValidateImage(byte[] data, string source)
+    internal (MemoryStream Stream, ImageFormat Format)? ValidateImage(byte[] data, string source)
     {
         // Skip tiny images — placeholders, 1x1 transparent PNGs, etc.
         if (data.Length < 1000)

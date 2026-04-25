@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.IO.Compression;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Audio;
@@ -220,6 +221,7 @@ public class CoverImageProvider : IDynamicImageProvider
         return ImageExtensions.Contains(Path.GetExtension(fileName));
     }
 
+    [ExcludeFromCodeCoverage] // Requires PDFium native library — tested via integration/E2E
     private async Task<DynamicImageResponse> GetPdfCover(string path, CancellationToken cancellationToken)
     {
         var noImage = new DynamicImageResponse { HasImage = false };
@@ -338,7 +340,7 @@ public class CoverImageProvider : IDynamicImageProvider
         return _pdfRenderingAvailable.Value;
     }
 
-    private static void TryKill(Process process)
+    internal static void TryKill(Process process)
     {
         try
         {
@@ -353,7 +355,7 @@ public class CoverImageProvider : IDynamicImageProvider
         }
     }
 
-    private static void CleanupTemp(string path)
+    internal static void CleanupTemp(string path)
     {
         try
         {
@@ -368,6 +370,7 @@ public class CoverImageProvider : IDynamicImageProvider
         }
     }
 
+    [ExcludeFromCodeCoverage] // Requires ffmpeg process — tested via integration/E2E
     private async Task<DynamicImageResponse> GetAudioCover(string path, CancellationToken cancellationToken)
     {
         var noImage = new DynamicImageResponse { HasImage = false };
