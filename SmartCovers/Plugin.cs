@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -14,6 +15,7 @@ namespace SmartCovers;
 /// Cover provider for Jellyfin libraries. Extracts covers from PDFs, EPUBs,
 /// audio files, and fetches from online sources as a last resort.
 /// </summary>
+[ExcludeFromCodeCoverage]
 public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
 {
     // Jellyfin's plugin loader scans all .dll files in the plugin directory and

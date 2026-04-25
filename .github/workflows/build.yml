@@ -27,8 +27,15 @@ jobs:
       - name: Build
         run: dotnet publish SmartCovers/SmartCovers.csproj -c Release --no-restore -o publish
 
-      - name: Test
-        run: dotnet test SmartCovers.Tests/SmartCovers.Tests.csproj --configuration Release --verbosity normal
+      - name: Test with coverage
+        run: dotnet test SmartCovers.Tests/SmartCovers.Tests.csproj --configuration Release --verbosity normal --collect:"XPlat Code Coverage" -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=cobertura
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: SmartCovers.Tests/TestResults/*/coverage.cobertura.xml
+          fail_ci_if_error: false
 
       - name: Get version from csproj
         id: version
