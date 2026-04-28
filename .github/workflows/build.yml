@@ -11,7 +11,28 @@ permissions:
   id-token: write
 
 jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.check.outputs.should_release }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get version and check tag
+        id: check
+        run: |
+          VERSION=$(grep -oP '(?<=<AssemblyVersion>)[^<]+' SmartCovers/SmartCovers.csproj)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          if git ls-remote --tags origin "refs/tags/v${VERSION}" | grep -q .; then
+            echo "should_release=false" >> $GITHUB_OUTPUT
+            echo "::notice::Tag v${VERSION} already exists — skipping release"
+          else
+            echo "should_release=true" >> $GITHUB_OUTPUT
+          fi
+
   build:
+    needs: [check-version]
+    if: needs.check-version.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
