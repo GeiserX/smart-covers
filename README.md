@@ -104,7 +104,7 @@ Then install **SmartCovers** from the plugin catalog and restart Jellyfin.
    ```
    <jellyfin-config>/plugins/SmartCovers_7.0.0.0/
    ```
-   The zip contains `SmartCovers.dll`, `PDFtoImage.dll`, and native PDFium libraries for all platforms under `runtimes/`.
+   The zip contains `SmartCovers.dll`, `PDFtoImage.lib` (the PDFtoImage managed library, shipped with a `.lib` extension so Jellyfin's plugin scanner skips it), and native PDFium libraries for all platforms under `runtimes/<rid>/native/`.
 3. Restart Jellyfin.
 
 ### Building from Source
@@ -113,7 +113,7 @@ Then install **SmartCovers** from the plugin catalog and restart Jellyfin.
 dotnet publish SmartCovers/SmartCovers.csproj -c Release -o publish
 ```
 
-The output will be in the `publish/` directory. Copy `SmartCovers.dll`, `PDFtoImage.dll`, and the `runtimes/` folder containing native PDFium libraries to your plugins directory.
+The output will be in the `publish/` directory. Copy `SmartCovers.dll`, the PDFtoImage managed library (rename `PDFtoImage.dll` to `PDFtoImage.lib` so Jellyfin's plugin scanner skips it), and the `runtimes/` folder containing native PDFium libraries to your plugins directory.
 
 ## Requirements
 
@@ -123,7 +123,7 @@ The output will be in the `publish/` directory. Copy `SmartCovers.dll`, `PDFtoIm
 | `ffmpeg` | Audio covers | Bundled with Jellyfin Docker images |
 | [Bookshelf plugin](https://github.com/jellyfin/jellyfin-plugin-bookshelf) v13+ | EPUB covers | Recommended; handles standard EPUB covers as primary provider |
 
-PDF rendering requires no external dependencies -- the native PDFium library is bundled with the plugin for all platforms (Linux x64/arm64, macOS, Windows).
+PDF rendering requires no external dependencies -- the native PDFium library is bundled with the plugin for all platforms (Linux x64/arm64/musl, macOS x64/arm64, Windows x64/x86/arm64).
 
 ## Configuration
 
@@ -143,7 +143,7 @@ The plugin settings page includes a **Libraries** section where you can enable o
 
 **PDF covers are not extracted**
 - Check the plugin config page -- it shows whether the PDFium native library loaded successfully.
-- Check the Jellyfin log for `PDFium native library failed to load`.
+- Grep the Jellyfin log for `pdfium native library`. On success it logs `pdfium native library loaded — PDF cover extraction enabled`; if the bundled native cannot load on this host it logs `pdfium native library not available — PDF cover extraction disabled` and PDF cover extraction is disabled while all other features keep working.
 
 **Audio covers are not extracted**
 - Confirm `ffmpeg` is available: run `which ffmpeg` inside the container.

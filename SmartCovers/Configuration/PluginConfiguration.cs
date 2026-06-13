@@ -18,7 +18,7 @@ public class PluginConfiguration : BasePluginConfiguration
     public int JpegQuality { get; set; } = 85;
 
     /// <summary>
-    /// Gets or sets the timeout in seconds for the pdftoppm process.
+    /// Gets or sets the timeout in seconds for a single PDF render or ffmpeg invocation.
     /// </summary>
     public int TimeoutSeconds { get; set; } = 30;
 

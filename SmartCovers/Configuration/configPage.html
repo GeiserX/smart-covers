@@ -101,7 +101,7 @@
                         if (status.PdfRenderingAvailable) {
                             lines.push('<p style="color:#52B54B;">&#10003; PDF rendering available (built-in PDFium).</p>');
                         } else {
-                            lines.push('<p style="color:#CC7B19;">&#10007; PDFium native library failed to load. PDF cover extraction disabled. Check server logs for details.</p>');
+                            lines.push('<p style="color:#CC7B19;">&#10007; pdfium native library not available. PDF cover extraction disabled (all other formats still work). Check server logs for details.</p>');
                         }
 
                         if (status.FfmpegAvailable) {

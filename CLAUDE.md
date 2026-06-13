@@ -28,16 +28,16 @@
 - System.IO.Compression (EPUB ZIP archive handling)
 - System.Net.Http (online cover fetching)
 - System.Text.Json (Open Library / Google Books API parsing)
-- System.Diagnostics.Process (pdftoppm / ffmpeg shell-out)
+- System.Diagnostics.Process (ffmpeg shell-out for audio art)
+- PDFtoImage + SkiaSharp (in-process PDF first-page rendering via the bundled PDFium native library)
 
 ### External Binaries
 
 | Binary | Required For | Discovery |
 |--------|-------------|-----------|
-| `pdftoppm` | PDF covers | `pdftoppm -v` — checked once, cached |
 | `ffmpeg` | Audio covers | `/usr/lib/jellyfin-ffmpeg/ffmpeg` first, then PATH — cached |
 
-Both optional. If absent, the respective extraction is silently skipped (warning logged once).
+Optional. If absent, audio art extraction is silently skipped (warning logged once). PDF rendering uses no external binary — it runs in-process via the bundled PDFium native library.
 
 ## Architecture
 
@@ -57,7 +57,7 @@ Plugin.cs                            Entry point, IHasWebPages (config UI, sideb
 For each `Book` or `AudioBook` item without a cover, Jellyfin calls `CoverImageProvider.GetImage()`. Methods tried in order:
 
 1. **EPUB** — Opens ZIP archive. 3-tier search: by filename (`cover`, `portada`, `front`, `frontcover`, `book_cover`), by path (any image with `cover` in archive path), by size (largest image >5 KB).
-2. **PDF** — Shells out to `pdftoppm` for page 1 as JPEG. DPI and quality configurable.
+2. **PDF** — Renders page 1 in-process via PDFtoImage (PDFium) + SkiaSharp, encoded as JPEG. DPI and JPEG quality configurable. Skipped cleanly if the bundled PDFium native cannot load on the host.
 3. **Audio file** — `ffmpeg -vcodec copy` raw-copies embedded art stream. Format detected via magic bytes (JPEG, PNG, GIF, WebP), stripping leading null padding.
 4. **Audio sidecar** — Checks for `cover.jpg`, `folder.jpg`, `front.jpg`, `poster.jpg`, `thumb.jpg` next to the file.
 5. **Folder audiobook** — Sidecar images in directory, then embedded art from first audio file.
@@ -82,8 +82,8 @@ Editable via **Dashboard → SmartCovers** (sidebar entry via `EnableInMainMenu 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
 | `Dpi` | `int` | `150` | PDF rendering resolution |
-| `JpegQuality` | `int` | `85` | PDF JPEG output quality (1–100) |
-| `TimeoutSeconds` | `int` | `30` | Max time per pdftoppm/ffmpeg invocation |
+| `JpegQuality` | `int` | `85` | PDF JPEG output quality (1–100). Honored via `SKBitmap.Encode` during PDF rendering. |
+| `TimeoutSeconds` | `int` | `30` | Max time per PDF render / ffmpeg invocation |
 | `EnableOnlineCoverFetch` | `bool` | `true` | Online fallback via Open Library and Google Books |
 
 ### Per-Library Toggle
@@ -94,7 +94,7 @@ Config page queries `Library/VirtualFolders`, shows each library's status. Enabl
 
 | Method | Path | Auth | Returns |
 |--------|------|------|---------|
-| `GET` | `/SmartCovers/Status` | Admin (`RequiresElevation`) | `{ pdftoppmAvailable, ffmpegAvailable, onlineCoverFetchEnabled }` |
+| `GET` | `/SmartCovers/Status` | Admin (`RequiresElevation`) | `{ PdfRenderingAvailable, ffmpegAvailable, onlineCoverFetchEnabled }` — `PdfRenderingAvailable` is a bool reporting whether the bundled PDFium native loaded |
 
 ## Development Guidelines
 
@@ -171,7 +171,7 @@ Version in `SmartCovers.csproj` (`<AssemblyVersion>` + `<FileVersion>`) must mat
 
 | Problem | Cause | Fix |
 |---------|-------|-----|
-| No PDF covers | `pdftoppm` missing | `apt-get install poppler-utils` in container |
+| No PDF covers | Bundled PDFium native can't load on this host | Check the log for `pdfium native library`; PDF covers are disabled while all other features keep working |
 | No audio covers | `ffmpeg` missing | Check `which ffmpeg` inside container |
 | Plugin doesn't run | Higher-priority provider already supplied cover | Delete existing cover, rescan library |
 | No online covers | Disabled or no internet | Check toggle in settings; verify access to `openlibrary.org`, `googleapis.com` |

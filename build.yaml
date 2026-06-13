@@ -1,7 +1,7 @@
 ---
 name: "SmartCovers"
 guid: "82eef869-3f18-4678-968d-06efc10b60cf"
-version: "7.1.1.0"
+version: "7.2.0.0"
 targetAbi: "10.11.0.0"
 framework: "net9.0"
 overview: "Cover extraction for books, audiobooks, comics, and music — with online fallback via Open Library & Google Books"
@@ -17,6 +17,13 @@ owner: "GeiserX"
 artifacts:
   - "SmartCovers.dll"
   - "PDFtoImage.lib"
+# Jellyfin loads ONLY the assemblies listed here and skips every other *.dll in
+# the plugin folder (including the bundled native pdfium.dll, which would
+# otherwise throw BadImageFormatException and disable the plugin). The canonical
+# copy of this whitelist is written into the zip's meta.json by the CI
+# "Create plugin package" step; this entry keeps the build descriptor consistent.
+assemblies:
+  - "SmartCovers.dll"
 changelog: >
   v6.0.0: Renamed to SmartCovers (Jellyfin branding compliance).
   v5.0.0: Renamed to Jelly Covers. New namespace, config page with native Jellyfin
