@@ -125,6 +125,8 @@ jobs:
             ]
           }
           EOF
+          python3 -c "import json; json.load(open('release/meta.json'))"
+          echo "meta.json is valid JSON"
           cd release && zip -r ../smart-covers_${{ steps.version.outputs.version }}.zip .
 
       - name: Calculate checksum
@@ -161,6 +163,8 @@ jobs:
             }
           ]
           EOF
+          python3 -c "import json; json.load(open('manifest.json'))"
+          echo "manifest.json is valid JSON"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1

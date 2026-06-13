@@ -37,11 +37,19 @@ public class CoverImageProvider : IDynamicImageProvider
         ".mp3", ".m4a", ".m4b", ".flac", ".ogg", ".opus", ".wma", ".aac", ".wav"
     };
 
+    // PDF availability cache as a tri-state: 0 = not yet probed, 1 = unavailable,
+    // 2 = available. A volatile int gives an atomic, correctly-published read on the
+    // lock-free fast path (weak memory models: arm64 — Raspberry Pi, Apple Silicon),
+    // unlike a non-atomic Nullable<bool> struct.
+    private const int PdfStateUnknown = 0;
+    private const int PdfStateUnavailable = 1;
+    private const int PdfStateAvailable = 2;
+
     private readonly ILogger<CoverImageProvider> _logger;
     private readonly OnlineCoverFetcher _onlineFetcher;
     private readonly object _pdfProbeLock = new();
     private readonly Func<bool> _pdfiumNativeProbe;
-    private bool? _pdfRenderingAvailable;
+    private volatile int _pdfRenderingState;
     private string? _ffmpegPath;
     private bool _ffmpegChecked;
 
@@ -63,7 +71,7 @@ public class CoverImageProvider : IDynamicImageProvider
     /// <param name="onlineFetcher">The online cover fetcher.</param>
     /// <param name="pdfiumNativeProbe">
     /// A probe returning <see langword="true"/> when the pdfium native library is loadable.
-    /// When <see langword="null"/>, the real <see cref="Plugin.TryLoadPdfiumNative"/> probe is used.
+    /// When <see langword="null"/>, the real <see cref="PdfiumNativeLibrary.TryLoad"/> probe is used.
     /// </param>
     internal CoverImageProvider(ILogger<CoverImageProvider> logger, OnlineCoverFetcher onlineFetcher, Func<bool>? pdfiumNativeProbe)
     {
@@ -73,14 +81,12 @@ public class CoverImageProvider : IDynamicImageProvider
     }
 
     /// <summary>
-    /// The default pdfium availability probe: loads (and pins) the native via the
-    /// plugin's shared loader. Crucially it touches NO PDFtoImage type, so a failed
-    /// probe never leaves a finalizable <c>PdfLibrary</c> behind. The handle is kept
-    /// resident (not freed) so PDFtoImage's later P/Invoke resolves to the same loaded
-    /// library — a successful probe therefore guarantees rendering won't hit a failed
-    /// native load (which would otherwise resurrect the finalizer crash).
+    /// The default pdfium availability probe: loads (and pins) the native via the shared
+    /// <see cref="PdfiumNativeLibrary"/>. It touches NO PDFtoImage type, so a failed probe
+    /// never leaves a finalizable <c>PdfLibrary</c> behind (see that type for the full
+    /// finalizer-crash rationale).
     /// </summary>
-    private static bool DefaultPdfiumNativeProbe() => Plugin.TryLoadPdfiumNative(out _);
+    private static bool DefaultPdfiumNativeProbe() => PdfiumNativeLibrary.TryLoad(out _);
 
     /// <inheritdoc />
     public string Name => "SmartCovers";
@@ -363,28 +369,24 @@ public class CoverImageProvider : IDynamicImageProvider
     /// </summary>
     /// <remarks>
     /// This deliberately probes the native library directly (via the injected probe,
-    /// which defaults to <see cref="Plugin.TryLoadPdfiumNative"/>) and does NOT call any
-    /// PDFtoImage rendering API. PDFtoImage's <c>PdfLibrary</c> registers a finalizer the
-    /// instant it is allocated; if its constructor then throws because pdfium is absent
-    /// or unloadable (any OS — Windows without the bundled dll, Alpine/musl, an arm64
-    /// mismatch, a corrupt download), the orphaned object's finalizer later re-invokes
-    /// <c>FPDF_DestroyLibrary</c> on the GC finalizer thread. That unhandled native
-    /// exception cannot be caught and terminates the entire host process. Confirming the
-    /// native is loadable first guarantees PDFtoImage is only ever touched when it can
-    /// succeed, so no broken finalizable object is ever created.
+    /// which defaults to <see cref="PdfiumNativeLibrary.TryLoad"/>) and does NOT call any
+    /// PDFtoImage rendering API — so when pdfium cannot load, no finalizable
+    /// <c>PdfLibrary</c> is ever constructed. See <see cref="PdfiumNativeLibrary"/> for
+    /// why touching PDFtoImage before the native loads would crash the host process.
     /// </remarks>
     internal bool IsPdfRenderingAvailable()
     {
-        if (_pdfRenderingAvailable.HasValue)
+        var state = _pdfRenderingState;
+        if (state != PdfStateUnknown)
         {
-            return _pdfRenderingAvailable.Value;
+            return state == PdfStateAvailable;
         }
 
         lock (_pdfProbeLock)
         {
-            if (_pdfRenderingAvailable.HasValue)
+            if (_pdfRenderingState != PdfStateUnknown)
             {
-                return _pdfRenderingAvailable.Value;
+                return _pdfRenderingState == PdfStateAvailable;
             }
 
             bool available;
@@ -409,7 +411,7 @@ public class CoverImageProvider : IDynamicImageProvider
                 _logger.LogWarning("pdfium native library not available — PDF cover extraction disabled");
             }
 
-            _pdfRenderingAvailable = available;
+            _pdfRenderingState = available ? PdfStateAvailable : PdfStateUnavailable;
             return available;
         }
     }

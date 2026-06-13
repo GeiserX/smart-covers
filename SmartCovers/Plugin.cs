@@ -18,11 +18,11 @@ namespace SmartCovers;
 [ExcludeFromCodeCoverage]
 public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
 {
-    // The pdfium native library handle, loaded once and pinned for the process
-    // lifetime so the availability probe and PDFtoImage's P/Invoke share the same
-    // resident library. IntPtr.Zero means "not yet loaded / not loadable".
-    private static readonly object _pdfiumLoadLock = new();
-    private static IntPtr _pdfiumHandle;
+    // Guards one-time registration of the pdfium DllImport resolver. The
+    // AssemblyLoadContext.Resolving handler is not serialized across threads for an
+    // in-flight first bind, so two concurrent first-touches of PDFtoImage could both
+    // reach SetDllImportResolver; a second call for the same assembly throws.
+    private static int _pdfiumResolverRegistered;
 
     // Jellyfin's plugin loader scans all .dll files in the plugin directory and
     // rejects any that reference a different version of a shared library (e.g.
@@ -46,9 +46,14 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
                     {
                         var asm = AssemblyLoadContext.Default.LoadFromAssemblyPath(libPath);
 
-                        // Register native library resolver so pdfium's P/Invoke
-                        // finds the correct platform binary under runtimes/.
-                        NativeLibrary.SetDllImportResolver(asm, ResolvePdfiumNative);
+                        // Register the native resolver so pdfium's P/Invoke finds the
+                        // correct platform binary under runtimes/. Exactly once: the
+                        // Resolving handler can fire concurrently on first touch, and a
+                        // second SetDllImportResolver for the same assembly throws.
+                        if (Interlocked.Exchange(ref _pdfiumResolverRegistered, 1) == 0)
+                        {
+                            NativeLibrary.SetDllImportResolver(asm, ResolvePdfiumNative);
+                        }
 
                         return asm;
                     }
@@ -96,145 +101,10 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
             return IntPtr.Zero;
         }
 
-        return TryLoadPdfiumNative(out var handle) ? handle : IntPtr.Zero;
-    }
-
-    /// <summary>
-    /// Attempts to load the bundled pdfium native library from the plugin's
-    /// <c>runtimes/&lt;rid&gt;/native/</c> layout.
-    /// </summary>
-    /// <remarks>
-    /// This is the single source of truth for locating pdfium. It is used both by
-    /// the <see cref="NativeLibrary.SetDllImportResolver"/> callback (so PDFtoImage's
-    /// P/Invoke resolves correctly) AND by <c>CoverImageProvider</c>'s availability
-    /// probe — the probe MUST confirm the native is loadable here BEFORE touching any
-    /// PDFtoImage API, because PDFtoImage's <c>PdfLibrary</c> arms a finalizer on
-    /// allocation; if its constructor then fails (pdfium absent/unloadable), the
-    /// orphaned finalizer re-invokes <c>FPDF_DestroyLibrary</c> on the GC finalizer
-    /// thread, and that unhandled native exception terminates the whole host process.
-    /// </remarks>
-    /// <param name="handle">The loaded native library handle, or <see cref="IntPtr.Zero"/> on failure.</param>
-    /// <returns><see langword="true"/> if pdfium was loaded; otherwise <see langword="false"/>.</returns>
-    internal static bool TryLoadPdfiumNative(out IntPtr handle)
-    {
-        // Fast path: pdfium is already loaded and pinned for the process lifetime.
-        // Volatile read pairs with the Volatile.Write below so the double-checked
-        // lock is correct on weak memory models (arm64 — Raspberry Pi, Apple Silicon).
-        var cached = Volatile.Read(ref _pdfiumHandle);
-        if (cached != IntPtr.Zero)
-        {
-            handle = cached;
-            return true;
-        }
-
-        lock (_pdfiumLoadLock)
-        {
-            cached = _pdfiumHandle;
-            if (cached != IntPtr.Zero)
-            {
-                handle = cached;
-                return true;
-            }
-
-            var pluginDir = Path.GetDirectoryName(typeof(Plugin).Assembly.Location);
-            if (pluginDir != null)
-            {
-                foreach (var path in EnumeratePdfiumCandidates(pluginDir))
-                {
-                    // NativeLibrary.TryLoad returns false (never throws) when the file
-                    // is missing, a dependency is missing, or the architecture
-                    // mismatches — so iterating candidates and taking the first that
-                    // loads is safe.
-                    if (NativeLibrary.TryLoad(path, out var loaded))
-                    {
-                        // Pin the handle: once pdfium is resident, the availability
-                        // probe and PDFtoImage's later P/Invoke resolve to the SAME
-                        // loaded library. A successful probe therefore guarantees that
-                        // rendering can never hit a failed native load — which is what
-                        // would otherwise resurrect the issue #11 finalizer crash via a
-                        // half-constructed PdfLibrary. The handle is released implicitly
-                        // at process exit; we never unload it.
-                        Volatile.Write(ref _pdfiumHandle, loaded);
-                        handle = loaded;
-                        return true;
-                    }
-                }
-            }
-        }
-
-        handle = IntPtr.Zero;
-        return false;
-    }
-
-    /// <summary>
-    /// Yields candidate filesystem paths for the pdfium native library, most-specific first.
-    /// </summary>
-    private static IEnumerable<string> EnumeratePdfiumCandidates(string pluginDir)
-    {
-        string nativeFileName = OperatingSystem.IsWindows() ? "pdfium.dll"
-            : OperatingSystem.IsMacOS() ? "libpdfium.dylib"
-            : "libpdfium.so";
-
-        // 1. The runtime's self-reported RID — matches the bundled folder on the
-        //    portable Microsoft runtimes (e.g. "linux-x64", "win-x64", "osx-arm64").
-        var rid = RuntimeInformation.RuntimeIdentifier;
-        yield return Path.Combine(pluginDir, "runtimes", rid, "native", nativeFileName);
-
-        // 2. A portable RID derived from OS + process architecture. Distro-packaged
-        //    or source-built .NET can report a distro-specific RID (e.g.
-        //    "ubuntu.24.10-x64") for which no runtimes/<rid>/ folder is shipped;
-        //    the portable RID is the folder the build actually bundles. Without this
-        //    fallback, those installs would lose PDF rendering even though the
-        //    correct native is present under a differently-named folder.
-        var portableRid = GetPortableRid();
-        if (portableRid != null && !string.Equals(portableRid, rid, StringComparison.OrdinalIgnoreCase))
-        {
-            yield return Path.Combine(pluginDir, "runtimes", portableRid, "native", nativeFileName);
-        }
-
-        // 3. Flat layout: the native sitting directly in the plugin root.
-        yield return Path.Combine(pluginDir, nativeFileName);
-
-        // 4. Last resort: any bundled runtimes/**/native/<file>. The OS loader
-        //    rejects architecture mismatches (TryLoad returns false), so probing
-        //    each match is safe and rescues an unforeseen RID-folder mismatch
-        //    instead of silently disabling PDF.
-        var runtimesDir = Path.Combine(pluginDir, "runtimes");
-        if (Directory.Exists(runtimesDir))
-        {
-            foreach (var match in Directory.EnumerateFiles(runtimesDir, nativeFileName, SearchOption.AllDirectories))
-            {
-                yield return match;
-            }
-        }
-    }
-
-    /// <summary>
-    /// Computes the portable .NET RID (e.g. <c>linux-x64</c>) from the current OS and
-    /// process architecture, or <see langword="null"/> if the platform is unrecognized.
-    /// </summary>
-    private static string? GetPortableRid()
-    {
-        string? os = OperatingSystem.IsWindows() ? "win"
-            : OperatingSystem.IsMacOS() ? "osx"
-            : OperatingSystem.IsLinux() ? "linux"
-            : null;
-
-        if (os == null)
-        {
-            return null;
-        }
-
-        string? arch = RuntimeInformation.ProcessArchitecture switch
-        {
-            Architecture.X64 => "x64",
-            Architecture.Arm64 => "arm64",
-            Architecture.X86 => "x86",
-            Architecture.Arm => "arm",
-            _ => null
-        };
-
-        return arch == null ? null : $"{os}-{arch}";
+        // Delegate to the shared loader (see PdfiumNativeLibrary for the full
+        // finalizer-crash rationale). The handle is pinned, so this resolves the same
+        // resident library the availability probe already confirmed.
+        return PdfiumNativeLibrary.TryLoad(out var handle) ? handle : IntPtr.Zero;
     }
 
     /// <inheritdoc />
