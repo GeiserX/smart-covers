@@ -18,6 +18,12 @@ namespace SmartCovers;
 [ExcludeFromCodeCoverage]
 public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
 {
+    // Guards one-time registration of the pdfium DllImport resolver. The
+    // AssemblyLoadContext.Resolving handler is not serialized across threads for an
+    // in-flight first bind, so two concurrent first-touches of PDFtoImage could both
+    // reach SetDllImportResolver; a second call for the same assembly throws.
+    private static int _pdfiumResolverRegistered;
+
     // Jellyfin's plugin loader scans all .dll files in the plugin directory and
     // rejects any that reference a different version of a shared library (e.g.
     // SkiaSharp). PDFtoImage.dll references SkiaSharp 3.119.2 while Jellyfin
@@ -40,9 +46,14 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
                     {
                         var asm = AssemblyLoadContext.Default.LoadFromAssemblyPath(libPath);
 
-                        // Register native library resolver so pdfium's P/Invoke
-                        // finds the correct platform binary under runtimes/.
-                        NativeLibrary.SetDllImportResolver(asm, ResolvePdfiumNative);
+                        // Register the native resolver so pdfium's P/Invoke finds the
+                        // correct platform binary under runtimes/. Exactly once: the
+                        // Resolving handler can fire concurrently on first touch, and a
+                        // second SetDllImportResolver for the same assembly throws.
+                        if (Interlocked.Exchange(ref _pdfiumResolverRegistered, 1) == 0)
+                        {
+                            NativeLibrary.SetDllImportResolver(asm, ResolvePdfiumNative);
+                        }
 
                         return asm;
                     }
@@ -90,33 +101,10 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
             return IntPtr.Zero;
         }
 
-        var pluginDir = Path.GetDirectoryName(typeof(Plugin).Assembly.Location);
-        if (pluginDir == null)
-        {
-            return IntPtr.Zero;
-        }
-
-        // Build candidate paths: platform-specific runtimes dir, then plugin root.
-        var rid = RuntimeInformation.RuntimeIdentifier;
-        string nativeFileName = OperatingSystem.IsWindows() ? "pdfium.dll"
-            : OperatingSystem.IsMacOS() ? "libpdfium.dylib"
-            : "libpdfium.so";
-
-        string[] candidates =
-        [
-            Path.Combine(pluginDir, "runtimes", rid, "native", nativeFileName),
-            Path.Combine(pluginDir, nativeFileName),
-        ];
-
-        foreach (var path in candidates)
-        {
-            if (NativeLibrary.TryLoad(path, out var handle))
-            {
-                return handle;
-            }
-        }
-
-        return IntPtr.Zero;
+        // Delegate to the shared loader (see PdfiumNativeLibrary for the full
+        // finalizer-crash rationale). The handle is pinned, so this resolves the same
+        // resident library the availability probe already confirmed.
+        return PdfiumNativeLibrary.TryLoad(out var handle) ? handle : IntPtr.Zero;
     }
 
     /// <inheritdoc />

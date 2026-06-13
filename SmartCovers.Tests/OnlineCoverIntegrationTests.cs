@@ -61,13 +61,21 @@ public class OnlineCoverIntegrationTests : IDisposable
         return data;
     }
 
-    private static CoverImageProvider CreateProviderWithMockHttp(MockHttpHandler handler)
+    /// <summary>
+    /// Builds a provider backed by a mock HTTP handler. When <paramref name="pdfiumNativeProbe"/>
+    /// is supplied the internal ctor is used so the pdfium-availability decision is deterministic
+    /// (independent of whether the host actually has a loadable pdfium); when null the public
+    /// ctor with the real probe is used, preserving existing callers' behavior.
+    /// </summary>
+    private static CoverImageProvider CreateProviderWithMockHttp(MockHttpHandler handler, Func<bool>? pdfiumNativeProbe = null)
     {
         var logger = Mock.Of<ILogger<CoverImageProvider>>();
         var fetcherLogger = Mock.Of<ILogger<OnlineCoverFetcher>>();
         var client = new HttpClient(handler);
         var fetcher = new OnlineCoverFetcher(fetcherLogger, client);
-        return new CoverImageProvider(logger, fetcher);
+        return pdfiumNativeProbe is null
+            ? new CoverImageProvider(logger, fetcher)
+            : new CoverImageProvider(logger, fetcher, pdfiumNativeProbe);
     }
 
     [Fact]
@@ -275,6 +283,12 @@ public class OnlineCoverIntegrationTests : IDisposable
     [Fact]
     public async Task GetImage_Pdf_NoPdfium_FallsBackToOnline()
     {
+        // Deterministic via the injected pdfium probe (() => false): without it this test
+        // used the REAL probe, so on a host WITH a loadable pdfium it would actually attempt
+        // to render the malformed dummy PDF and only "pass" because that render happened to
+        // fail — i.e. it passed for the wrong reason and was non-deterministic across hosts.
+        // Forcing the probe false makes the no-pdfium branch the one under test on every host:
+        // PDF rendering is skipped entirely and the item must fall back to the online fetcher.
         var handler = new MockHttpHandler();
 
         handler.AddJsonResponse("openlibrary.org/search.json", new
@@ -283,7 +297,7 @@ public class OnlineCoverIntegrationTests : IDisposable
         });
         handler.AddImageResponse("covers.openlibrary.org", CreateFakeJpeg());
 
-        var provider = CreateProviderWithMockHttp(handler);
+        var provider = CreateProviderWithMockHttp(handler, pdfiumNativeProbe: () => false);
 
         var pdfPath = Path.Combine(_tmpDir, "book.pdf");
         File.WriteAllText(pdfPath, "%PDF-1.0 dummy");
@@ -293,7 +307,7 @@ public class OnlineCoverIntegrationTests : IDisposable
         item.SetupGet(i => i.Name).Returns("PDF Book");
 
         var result = await provider.GetImage(item.Object, ImageType.Primary, CancellationToken.None);
-        // PDF rendering likely fails in test env, so falls back to online
+        // pdfium unavailable -> PDF branch skipped -> deterministic online fallback.
         Assert.True(result.HasImage);
     }
 

@@ -75,18 +75,58 @@ jobs:
           # SkiaSharp is intentionally NOT bundled — Jellyfin already ships it (≥ 3.116.1).
           # PDFtoImage 5.2.1 requires SkiaSharp >= 3.116.1 which Jellyfin satisfies.
           # Bundling a second copy would cause assembly-loading conflicts at runtime.
-          # Bundle native pdfium libraries for Linux and macOS.
-          # Windows native pdfium.dll is excluded because Jellyfin's plugin
-          # loader recursively scans for .dll files and tries to load them as
-          # .NET assemblies, which fatally disables the plugin (BadImageFormatException).
-          # Linux .so and macOS .dylib are unaffected. Windows users lose PDF
-          # rendering but all other features (EPUB, audio, online) still work.
-          find publish/runtimes -name "libpdfium*" | while read f; do
+          #
+          # Bundle native pdfium libraries for ALL platforms — Linux (.so),
+          # macOS (.dylib) AND Windows (pdfium.dll). Windows natives are now
+          # included: Jellyfin's plugin loader recursively scans for *.dll and
+          # would try to load pdfium.dll as a managed assembly, but the
+          # "assemblies" whitelist in meta.json (written below) restricts loading
+          # to SmartCovers.dll only, so the native pdfium.dll is ignored instead
+          # of fatally disabling the plugin. The Windows pdfium.dll is statically
+          # linked against the CRT, so no Visual C++ Redistributable is required.
+          #
+          # NOTE: `dotnet publish` here is framework-dependent (no -r), yet it
+          # still lays down every RID's native assets under publish/runtimes/,
+          # including win-x64, win-x86 and win-arm64 pdfium.dll. These come from
+          # the bblanchon.PDFium.* NuGet package's runtimes/ folder (resolved at
+          # restore, host-independent), so no <RuntimeIdentifiers> and no
+          # NuGet-cache copy step are needed.
+          find publish/runtimes \( -name "libpdfium*" -o -name "pdfium.dll" \) | while read f; do
             rel="${f#publish/}"
             mkdir -p "release/$(dirname "$rel")"
             cp "$f" "release/$rel"
           done
           cp build.yaml release/
+          # Write meta.json into the zip with an "assemblies" whitelist.
+          # Jellyfin's PluginManager loads ONLY the assemblies listed here and
+          # skips every other *.dll in the plugin folder (including the native
+          # pdfium.dll). On a catalog install the zip is extracted first, then
+          # ReconcileManifest copies this "assemblies" array verbatim into the
+          # generated meta.json (the catalog manifest.json has no assemblies
+          # field); on a sideload the bundled meta.json is read as-is. The guid
+          # MUST match the catalog entry and every listed path MUST exist in the
+          # zip, or Jellyfin marks the plugin Malfunctioned.
+          VERSION="${{ steps.version.outputs.version }}"
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          cat > release/meta.json << EOF
+          {
+            "guid": "82eef869-3f18-4678-968d-06efc10b60cf",
+            "name": "SmartCovers",
+            "version": "${VERSION}",
+            "targetAbi": "10.11.0.0",
+            "framework": "net9.0",
+            "owner": "GeiserX",
+            "overview": "Cover extraction for books, audiobooks, comics, and music — with online fallback via Open Library & Google Books.",
+            "description": "Cover provider for Jellyfin libraries. Renders PDF first pages via built-in PDFium (no external tools needed), searches EPUB archives for cover images, and extracts embedded artwork from audio files via ffmpeg. When local extraction fails, automatically fetches covers from Open Library and Google Books as a last resort.",
+            "category": "General",
+            "timestamp": "${TIMESTAMP}",
+            "assemblies": [
+              "SmartCovers.dll"
+            ]
+          }
+          EOF
+          python3 -c "import json; json.load(open('release/meta.json'))"
+          echo "meta.json is valid JSON"
           cd release && zip -r ../smart-covers_${{ steps.version.outputs.version }}.zip .
 
       - name: Calculate checksum
@@ -123,6 +163,8 @@ jobs:
             }
           ]
           EOF
+          python3 -c "import json; json.load(open('manifest.json'))"
+          echo "manifest.json is valid JSON"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3

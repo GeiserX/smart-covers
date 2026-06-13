@@ -9,6 +9,7 @@ using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Net;
 using Microsoft.Extensions.Logging;
 using PDFtoImage;
+using SkiaSharp;
 
 namespace SmartCovers;
 
@@ -36,9 +37,19 @@ public class CoverImageProvider : IDynamicImageProvider
         ".mp3", ".m4a", ".m4b", ".flac", ".ogg", ".opus", ".wma", ".aac", ".wav"
     };
 
+    // PDF availability cache as a tri-state: 0 = not yet probed, 1 = unavailable,
+    // 2 = available. A volatile int gives an atomic, correctly-published read on the
+    // lock-free fast path (weak memory models: arm64 — Raspberry Pi, Apple Silicon),
+    // unlike a non-atomic Nullable<bool> struct.
+    private const int PdfStateUnknown = 0;
+    private const int PdfStateUnavailable = 1;
+    private const int PdfStateAvailable = 2;
+
     private readonly ILogger<CoverImageProvider> _logger;
     private readonly OnlineCoverFetcher _onlineFetcher;
-    private bool? _pdfRenderingAvailable;
+    private readonly object _pdfProbeLock = new();
+    private readonly Func<bool> _pdfiumNativeProbe;
+    private volatile int _pdfRenderingState;
     private string? _ffmpegPath;
     private bool _ffmpegChecked;
 
@@ -46,10 +57,36 @@ public class CoverImageProvider : IDynamicImageProvider
     /// Initializes a new instance of the <see cref="CoverImageProvider"/> class.
     /// </summary>
     public CoverImageProvider(ILogger<CoverImageProvider> logger, OnlineCoverFetcher onlineFetcher)
+        : this(logger, onlineFetcher, null)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="CoverImageProvider"/> class with an
+    /// injectable native-availability probe. The <paramref name="pdfiumNativeProbe"/> seam
+    /// exists so tests can assert the no-native path without loading real pdfium (and
+    /// without ever constructing PDFtoImage's finalizable <c>PdfLibrary</c>).
+    /// </summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="onlineFetcher">The online cover fetcher.</param>
+    /// <param name="pdfiumNativeProbe">
+    /// A probe returning <see langword="true"/> when the pdfium native library is loadable.
+    /// When <see langword="null"/>, the real <see cref="PdfiumNativeLibrary.TryLoad"/> probe is used.
+    /// </param>
+    internal CoverImageProvider(ILogger<CoverImageProvider> logger, OnlineCoverFetcher onlineFetcher, Func<bool>? pdfiumNativeProbe)
     {
         _logger = logger;
         _onlineFetcher = onlineFetcher;
+        _pdfiumNativeProbe = pdfiumNativeProbe ?? DefaultPdfiumNativeProbe;
     }
+
+    /// <summary>
+    /// The default pdfium availability probe: loads (and pins) the native via the shared
+    /// <see cref="PdfiumNativeLibrary"/>. It touches NO PDFtoImage type, so a failed probe
+    /// never leaves a finalizable <c>PdfLibrary</c> behind (see that type for the full
+    /// finalizer-crash rationale).
+    /// </summary>
+    private static bool DefaultPdfiumNativeProbe() => PdfiumNativeLibrary.TryLoad(out _);
 
     /// <inheritdoc />
     public string Name => "SmartCovers";
@@ -234,23 +271,43 @@ public class CoverImageProvider : IDynamicImageProvider
         var config = Plugin.Instance?.Configuration;
         var dpi = config?.Dpi ?? 150;
         var timeoutSec = config?.TimeoutSeconds ?? 30;
+        // Clamp to SkiaSharp's valid JPEG quality range (1-100); default 85.
+        var jpegQuality = Math.Clamp(config?.JpegQuality ?? 85, 1, 100);
 
         try
         {
             // Run synchronous PDFium rendering on a thread-pool thread.
             // Task.Run's token only prevents scheduling — it cannot interrupt
-            // SaveJpeg once it's running. Race against a standalone Task.Delay
+            // rendering once it's running. Race against a standalone Task.Delay
             // for a real timeout boundary. The delay is NOT linked to
             // cancellationToken so that caller cancellation propagates correctly
             // through renderTask (via OCE) instead of being misclassified as a
             // timeout.
+            //
+            // We render to an SKBitmap and encode the JPEG ourselves rather than
+            // calling Conversion.SaveJpeg, because PDFtoImage's RenderOptions has no
+            // quality knob and SaveJpeg has no quality overload — encoding via
+            // SKBitmap.Encode is the only way to honor the configured JpegQuality.
             var renderTask = Task.Run(
                 () =>
                 {
                     using var pdfStream = File.OpenRead(path);
-                    var output = new MemoryStream();
                     var options = new RenderOptions { Dpi = dpi };
-                    Conversion.SaveJpeg(output, pdfStream, page: new Index(0), options: options);
+                    using var bitmap = Conversion.ToImage(pdfStream, page: new Index(0), options: options);
+                    var output = new MemoryStream();
+                    try
+                    {
+                        // Encode returns false (writing nothing) on encoder failure;
+                        // leave the stream empty so the Length == 0 check below maps it
+                        // to "no image" rather than emitting a truncated cover.
+                        bitmap.Encode(output, SKEncodedImageFormat.Jpeg, jpegQuality);
+                    }
+                    catch
+                    {
+                        output.Dispose();
+                        throw;
+                    }
+
                     return output;
                 },
                 cancellationToken);
@@ -306,38 +363,57 @@ public class CoverImageProvider : IDynamicImageProvider
     }
 
     /// <summary>
-    /// Probes whether the bundled PDFium native library loads successfully by
-    /// attempting to render a minimal 1-page PDF. Result is cached for the
-    /// lifetime of the singleton.
+    /// Reports whether PDF cover rendering is available, by checking that the bundled
+    /// pdfium native library can be loaded. The result is computed once and cached for
+    /// the lifetime of the singleton; the computation is thread-safe.
     /// </summary>
+    /// <remarks>
+    /// This deliberately probes the native library directly (via the injected probe,
+    /// which defaults to <see cref="PdfiumNativeLibrary.TryLoad"/>) and does NOT call any
+    /// PDFtoImage rendering API — so when pdfium cannot load, no finalizable
+    /// <c>PdfLibrary</c> is ever constructed. See <see cref="PdfiumNativeLibrary"/> for
+    /// why touching PDFtoImage before the native loads would crash the host process.
+    /// </remarks>
     internal bool IsPdfRenderingAvailable()
     {
-        if (_pdfRenderingAvailable.HasValue)
+        var state = _pdfRenderingState;
+        if (state != PdfStateUnknown)
         {
-            return _pdfRenderingAvailable.Value;
+            return state == PdfStateAvailable;
         }
 
-        try
+        lock (_pdfProbeLock)
         {
-            // Minimal valid PDF (1 blank page) to trigger native pdfium load.
-            var minimalPdf = "%PDF-1.0\n1 0 obj<</Pages 2 0 R>>endobj\n2 0 obj<</Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</MediaBox[0 0 1 1]>>endobj\ntrailer<</Root 1 0 R>>"u8;
-            using var pdfStream = new MemoryStream(minimalPdf.ToArray());
-            using var output = new MemoryStream();
-            Conversion.SaveJpeg(output, pdfStream, page: new Index(0));
-            _pdfRenderingAvailable = output.Length > 0;
-        }
-        catch (Exception ex)
-        {
-            _pdfRenderingAvailable = false;
-            _logger.LogWarning(ex, "PDFium native library failed to load — PDF cover extraction disabled");
-        }
+            if (_pdfRenderingState != PdfStateUnknown)
+            {
+                return _pdfRenderingState == PdfStateAvailable;
+            }
 
-        if (_pdfRenderingAvailable == true)
-        {
-            _logger.LogInformation("PDFium loaded — PDF cover extraction enabled");
-        }
+            bool available;
+            try
+            {
+                available = _pdfiumNativeProbe();
+            }
+            catch (Exception ex)
+            {
+                // TryLoad itself should never throw, but guard defensively so a probe
+                // failure can never escalate the way the original render-probe did.
+                available = false;
+                _logger.LogWarning(ex, "pdfium native availability probe failed — PDF cover extraction disabled");
+            }
 
-        return _pdfRenderingAvailable.Value;
+            if (available)
+            {
+                _logger.LogInformation("pdfium native library loaded — PDF cover extraction enabled");
+            }
+            else
+            {
+                _logger.LogWarning("pdfium native library not available — PDF cover extraction disabled");
+            }
+
+            _pdfRenderingState = available ? PdfStateAvailable : PdfStateUnavailable;
+            return available;
+        }
     }
 
     internal static void TryKill(Process process)
