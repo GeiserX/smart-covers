@@ -9,6 +9,14 @@
     "imageUrl": "",
     "versions": [
       {
+        "version": "7.2.0.0",
+        "changelog": "Fix a crash that could take down the whole Jellyfin server when the PDFium native library failed to load. Restore PDF cover rendering on Windows (x64/x86/arm64). Honor the JPEG quality setting. Harden native-library resolution across platforms.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/GeiserX/smart-covers/releases/download/v7.2.0.0/smart-covers_7.2.0.0.zip",
+        "checksum": "e2e0ab8e28870e53099ca16e98b0383b",
+        "timestamp": "2026-06-13T20:43:45Z"
+      },
+      {
         "version": "7.0.0.0",
         "changelog": "Built-in PDF rendering via PDFium (no poppler-utils needed). Music library support. SkiaSharp 3.x compatibility.",
         "targetAbi": "10.11.0.0",
