@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   check-version:
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-latest
     outputs:
       should_release: ${{ steps.check.outputs.should_release }}
     steps:
@@ -33,7 +33,7 @@ jobs:
   build:
     needs: [check-version]
     if: needs.check-version.outputs.should_release == 'true'
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
 
