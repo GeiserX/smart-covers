@@ -3,6 +3,8 @@ name: Build and Release
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -32,7 +34,7 @@ jobs:
 
   build:
     needs: [check-version]
-    if: needs.check-version.outputs.should_release == 'true'
+    if: github.event_name == 'pull_request' || needs.check-version.outputs.should_release == 'true'
     runs-on: [self-hosted, Linux, X64]
     steps:
       - uses: actions/checkout@v6
@@ -167,6 +169,7 @@ jobs:
           echo "manifest.json is valid JSON"
 
       - name: Create GitHub Release
+        if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ steps.version.outputs.version }}
@@ -177,13 +180,16 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Pages
+        if: github.event_name != 'pull_request'
         uses: actions/configure-pages@v6
 
       - name: Upload Pages artifact
+        if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v5
         with:
           path: .
 
       - name: Deploy to GitHub Pages
+        if: github.event_name != 'pull_request'
         id: deployment
         uses: actions/deploy-pages@v5
