@@ -26,6 +26,7 @@
 
 - Jellyfin Plugin API (10.11+): `BasePlugin<T>`, `IDynamicImageProvider`, `IHasWebPages`, `IPluginServiceRegistrator`
 - System.IO.Compression (EPUB ZIP archive handling)
+- SharpCompress (CBZ/CBR comic archives — content-sniffed ZIP/RAR reading, pinned to the exact version Jellyfin ships)
 - System.Net.Http (online cover fetching)
 - System.Text.Json (Open Library / Google Books API parsing)
 - System.Diagnostics.Process (ffmpeg shell-out for audio art)
@@ -46,7 +47,8 @@ Plugin.cs                            Entry point, IHasWebPages (config UI, sideb
 ├── Configuration/
 │   ├── PluginConfiguration.cs       Settings: DPI, JPEG quality, timeout, online fetch toggle
 │   └── configPage.html              Admin UI — Jellyfin emby-* components, per-library toggle
-├── CoverImageProvider.cs            IDynamicImageProvider: PDF, EPUB, audio, folder, sidecar
+├── CoverImageProvider.cs            IDynamicImageProvider: PDF, EPUB, CBZ/CBR, audio, folder, sidecar
+├── NaturalStringComparer.cs         Digit-aware ordering (page-2 before page-10) for comic pages
 ├── CoverStatusController.cs         REST API: GET /SmartCovers/Status
 ├── OnlineCoverFetcher.cs            Open Library + Google Books (last resort)
 └── PluginServiceRegistrar.cs        Registers CoverImageProvider as singleton
@@ -57,11 +59,12 @@ Plugin.cs                            Entry point, IHasWebPages (config UI, sideb
 For each `Book` or `AudioBook` item without a cover, Jellyfin calls `CoverImageProvider.GetImage()`. Methods tried in order:
 
 1. **EPUB** — Opens ZIP archive. 3-tier search: by filename (`cover`, `portada`, `front`, `frontcover`, `book_cover`), by path (any image with `cover` in archive path), by size (largest image >5 KB).
-2. **PDF** — Renders page 1 in-process via PDFtoImage (PDFium) + SkiaSharp, encoded as JPEG. DPI and JPEG quality configurable. Skipped cleanly if the bundled PDFium native cannot load on the host.
-3. **Audio file** — `ffmpeg -vcodec copy` raw-copies embedded art stream. Format detected via magic bytes (JPEG, PNG, GIF, WebP), stripping leading null padding.
-4. **Audio sidecar** — Checks for `cover.jpg`, `folder.jpg`, `front.jpg`, `poster.jpg`, `thumb.jpg` next to the file.
-5. **Folder audiobook** — Sidecar images in directory, then embedded art from first audio file.
-6. **Online fallback** — Open Library (title + author) → Google Books → Open Library (title only).
+2. **CBZ/CBR** — Opens via SharpCompress with content sniffing (mislabeled archives still work; RAR4/RAR5/solid supported). Explicit cover-named entry wins, else first page in natural sort order (`page-2` before `page-10`). Junk (`__MACOSX/`, dot-files), tiny images (<1 KB) skipped; every candidate verified by magic bytes.
+3. **PDF** — Renders page 1 in-process via PDFtoImage (PDFium) + SkiaSharp, encoded as JPEG. DPI and JPEG quality configurable. Skipped cleanly if the bundled PDFium native cannot load on the host.
+4. **Audio file** — `ffmpeg -vcodec copy` raw-copies embedded art stream. Format detected via magic bytes (JPEG, PNG, GIF, BMP, WebP), stripping leading null padding.
+5. **Audio sidecar** — Checks for `cover.jpg`, `folder.jpg`, `front.jpg`, `poster.jpg`, `thumb.jpg` next to the file.
+6. **Folder audiobook** — Sidecar images in directory, then embedded art from first audio file.
+7. **Online fallback** — Open Library (title + author) → Google Books → Open Library (title only).
 
 Each method returns a `DynamicImageResponse` with a `MemoryStream`. One image at a time, typically under 1 MB.
 
@@ -189,6 +192,10 @@ Things discovered during development that save time and prevent mistakes:
 - **CI manifest workaround**: The `stefanzweifel/git-auto-commit-action` step in the release workflow always fails due to branch protection rules. This is expected. The manual steps (download zip → md5sum → update manifest.json → push) are the permanent workflow.
 - **Awesome-list PRs**: Open PRs exist at `awesome-jellyfin/awesome-jellyfin` and `quozd/awesome-dotnet` referencing this plugin. If the plugin is renamed again, those PRs need updating (branch content + PR title/body).
 - **Deploy path on production**: The Jellyfin instance runs on `watchtower` (Unraid). Plugin path: `/mnt/user/appdata/arr/jellyfin/config/plugins/SmartCovers_<version>/`. Old plugin folders may have FUSE hidden files while Jellyfin is running — restart first, then delete.
+- **SharpCompress access styles are mutually exclusive** (0.49.x): per-entry random access (`entry.OpenEntryStream()`) THROWS on solid RAR archives (`unpacked file size does not match header`), and the forward reader (`archive.ExtractAllEntries()`) THROWS on everything that is NOT solid/7z (`can only be used on solid archives or 7Zip archives`). Branch on `archive.IsSolid` — there is no single code path.
+- **Plugin dependency DLLs resolve via the Default ALC, not the plugin folder**: `PluginLoadContext`'s `AssemblyDependencyResolver` is built with the plugin *directory* (no deps.json) so it resolves nothing; resolution falls back to Jellyfin's Default ALC. A dependency Jellyfin itself ships (SharpCompress) binds to *Jellyfin's copy* — pin the csproj to the same version Jellyfin ships to rule out API drift. A dependency Jellyfin does NOT ship needs the `AssemblyLoadContext.Default.Resolving` handler in `Plugin.cs` (that's why PDFtoImage has one; SharpCompress has one as future-proofing only).
+- **The meta.json `assemblies` whitelist controls scanning, not resolution**: non-whitelisted DLLs in the plugin folder are simply not loaded/`GetTypes()`-scanned at startup (the scan is what breaks on version-mismatched refs like SkiaSharp) but remain on disk and fully resolvable at runtime. Bundled dependency DLLs stay OUT of the whitelist, keep their real `.dll` names, and need no `.lib` rename.
+- **RAR 7.x cannot author RAR4 archives** (creation removed; extraction still works). The RAR4 test fixture is hand-crafted by `SmartCovers.Tests/Fixtures/make-fixtures.py` (spec-conformant stored RAR 1.5-format blocks, verified with `unrar t`).
 
 ## ⚠️ Security Notice
 

@@ -9,14 +9,16 @@ using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Net;
 using Microsoft.Extensions.Logging;
 using PDFtoImage;
+using SharpCompress.Archives;
 using SkiaSharp;
 
 namespace SmartCovers;
 
 /// <summary>
-/// Fallback cover provider for books and audiobooks. Handles PDFs (first page
-/// rendered via built-in PDFium), EPUBs (aggressive image search inside the ZIP
-/// archive), and audio files (embedded art extraction via ffmpeg raw stream copy).
+/// Fallback cover provider for books, comics and audiobooks. Handles PDFs (first
+/// page rendered via built-in PDFium), EPUBs (aggressive image search inside the
+/// ZIP archive), comic archives (.cbz/.cbr — first page in natural sort order),
+/// and audio files (embedded art extraction via ffmpeg raw stream copy).
 /// Acts as a safety net when built-in providers fail — particularly for audio
 /// files with mislabeled codec tags (e.g. JPEG data tagged as PNG in ID3).
 /// </summary>
@@ -36,6 +38,22 @@ public class CoverImageProvider : IDynamicImageProvider
     {
         ".mp3", ".m4a", ".m4b", ".flac", ".ogg", ".opus", ".wma", ".aac", ".wav"
     };
+
+    private static readonly HashSet<string> ComicExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".cbz", ".cbr"
+    };
+
+    // Upper bound on how many archive entries a single comic extraction may open.
+    // The cover is virtually always the first candidate; the cap keeps a
+    // pathological archive (thousands of junk "images") from stalling a scan.
+    private const int MaxComicCandidateAttempts = 5;
+
+    // Decompression-bomb guard: hard ceiling on the decompressed size of a single
+    // comic entry. Real cover pages are a few MB; a crafted archive must not be
+    // able to balloon Jellyfin's memory (headers can lie, so the cap is enforced
+    // while copying, not just checked up front).
+    private const long MaxComicEntryBytes = 64 * 1024 * 1024;
 
     // PDF availability cache as a tri-state: 0 = not yet probed, 1 = unavailable,
     // 2 = available. A volatile int gives an atomic, correctly-published read on the
@@ -123,6 +141,10 @@ public class CoverImageProvider : IDynamicImageProvider
             if (string.Equals(ext, ".epub", StringComparison.OrdinalIgnoreCase))
             {
                 result = await GetEpubCover(path, cancellationToken).ConfigureAwait(false);
+            }
+            else if (ComicExtensions.Contains(ext))
+            {
+                result = await GetComicCover(path, cancellationToken).ConfigureAwait(false);
             }
             else if (string.Equals(ext, ".pdf", StringComparison.OrdinalIgnoreCase))
             {
@@ -256,6 +278,219 @@ public class CoverImageProvider : IDynamicImageProvider
     private static bool IsImageFile(string fileName)
     {
         return ImageExtensions.Contains(Path.GetExtension(fileName));
+    }
+
+    private async Task<DynamicImageResponse> GetComicCover(string path, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await ExtractComicCover(path, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Corrupt/unreadable archives land here, and so does a missing or
+            // unloadable SharpCompress.dll: the assembly only resolves when
+            // ExtractComicCover is first invoked, so a load failure surfaces at
+            // the call above and degrades to "no image" (+ online fallback)
+            // instead of failing the whole scan.
+            _logger.LogError(ex, "Failed to extract comic cover for {Path}", path);
+            return new DynamicImageResponse { HasImage = false };
+        }
+    }
+
+    /// <summary>
+    /// Extracts a cover from a comic archive (.cbz/.cbr). The archive format is
+    /// sniffed from the file content rather than the extension — mislabeled
+    /// archives (a RAR named .cbz, a ZIP named .cbr) are common and still open.
+    /// An entry explicitly named like a cover wins; otherwise pages are tried in
+    /// natural sort order, because the comic convention is that the first page IS
+    /// the cover (and natural order keeps page-2 ahead of page-10).
+    /// </summary>
+    /// <remarks>
+    /// SharpCompress forbids mixing access styles: per-entry random access throws on
+    /// SOLID archives (each solid entry depends on the ones before it), while the
+    /// forward reader (<c>ExtractAllEntries</c>) throws on everything that is NOT
+    /// solid/7z. So the chosen candidates are extracted via random access for plain
+    /// zip/rar and via a single forward walk for solid archives.
+    /// </remarks>
+    private async Task<DynamicImageResponse> ExtractComicCover(string path, CancellationToken cancellationToken)
+    {
+        using var fileStream = File.OpenRead(path);
+        using var archive = ArchiveFactory.OpenArchive(fileStream);
+
+        // Size gate up front so icons/thumbnails (<1 KB) and absurdly large entries
+        // never consume one of the few candidate slots. Size <= 0 means the header
+        // doesn't report one — let those through; the guards while copying decide.
+        var imageEntries = archive.Entries
+            .Where(e => !e.IsDirectory
+                && !string.IsNullOrEmpty(e.Key)
+                && (e.Size <= 0 || (e.Size >= 1_000 && e.Size <= MaxComicEntryBytes))
+                && IsImageFile(GetArchiveEntryFileName(e.Key))
+                && !IsJunkComicEntry(e.Key))
+            .ToList();
+
+        if (imageEntries.Count == 0)
+        {
+            return new DynamicImageResponse { HasImage = false };
+        }
+
+        // Candidate priority: explicit cover entries (largest first) ahead of pages
+        // in natural sort order. Distinct() collapses the overlap — both sequences
+        // enumerate the same entry instances, so reference equality suffices.
+        var candidates = imageEntries
+            .Where(e => CoverFileNames.Contains(Path.GetFileNameWithoutExtension(GetArchiveEntryFileName(e.Key!))))
+            .OrderByDescending(e => e.Size)
+            .Concat(imageEntries.OrderBy(e => e.Key!, NaturalStringComparer.Instance))
+            .Distinct()
+            .Take(MaxComicCandidateAttempts)
+            .ToList();
+
+        var data = archive.IsSolid || archive.Type == SharpCompress.Common.ArchiveType.SevenZip
+            ? await ExtractBestCandidateForward(archive, candidates, cancellationToken).ConfigureAwait(false)
+            : await ExtractBestCandidateRandomAccess(candidates, cancellationToken).ConfigureAwait(false);
+
+        if (data == null)
+        {
+            return new DynamicImageResponse { HasImage = false };
+        }
+
+        var (format, offset) = DetectImageFormat(data);
+
+        _logger.LogDebug("Comic cover ({Size} bytes) in {Path}", data.Length, path);
+
+        var imageStream = offset > 0
+            ? new MemoryStream(data, offset, data.Length - offset)
+            : new MemoryStream(data);
+
+        return new DynamicImageResponse
+        {
+            HasImage = true,
+            Stream = imageStream,
+            Format = format!.Value
+        };
+    }
+
+    /// <summary>
+    /// Extracts the first candidate that verifies as a real image, opening only the
+    /// chosen entries. Valid for non-solid archives (zip, plain rar).
+    /// </summary>
+    private static async Task<byte[]?> ExtractBestCandidateRandomAccess(
+        List<IArchiveEntry> candidates,
+        CancellationToken cancellationToken)
+    {
+        foreach (var entry in candidates)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var data = await ReadEntryBytes(entry.OpenEntryStream(), cancellationToken).ConfigureAwait(false);
+            if (IsPlausibleCoverImage(data))
+            {
+                return data;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Walks a solid archive forward once (random access into a solid stream is not
+    /// supported), decodes candidates as they appear physically, keeps the
+    /// best-priority one that verifies as a real image, and stops early when the top
+    /// candidate succeeds.
+    /// </summary>
+    private static async Task<byte[]?> ExtractBestCandidateForward(
+        IArchive archive,
+        List<IArchiveEntry> candidates,
+        CancellationToken cancellationToken)
+    {
+        // TryAdd, not ToDictionary: archives may legally contain duplicate entry
+        // names — the first (best-priority) occurrence wins. Rank = candidate
+        // priority; lower is better.
+        var rankByKey = new Dictionary<string, int>(StringComparer.Ordinal);
+        var nextRank = 0;
+        foreach (var candidate in candidates)
+        {
+            rankByKey.TryAdd(candidate.Key!, nextRank++);
+        }
+
+        byte[]? bestData = null;
+        var bestRank = int.MaxValue;
+
+        using var reader = archive.ExtractAllEntries();
+        while (bestRank > 0 && reader.MoveToNextEntry())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var entry = reader.Entry;
+            if (entry.IsDirectory
+                || string.IsNullOrEmpty(entry.Key)
+                || !rankByKey.TryGetValue(entry.Key, out var rank)
+                || rank >= bestRank)
+            {
+                continue;
+            }
+
+            var data = await ReadEntryBytes(reader.OpenEntryStream(), cancellationToken).ConfigureAwait(false);
+            if (IsPlausibleCoverImage(data))
+            {
+                bestData = data;
+                bestRank = rank;
+            }
+        }
+
+        return bestData;
+    }
+
+    private static async Task<byte[]> ReadEntryBytes(Stream entryStream, CancellationToken cancellationToken)
+    {
+        await using (entryStream.ConfigureAwait(false))
+        {
+            using var ms = new MemoryStream();
+            var buffer = new byte[81_920];
+            int read;
+            while ((read = await entryStream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
+            {
+                ms.Write(buffer, 0, read);
+                if (ms.Length > MaxComicEntryBytes)
+                {
+                    // Decompression bomb: the header lied about the size. Bail out;
+                    // the empty result fails the plausibility check and the entry
+                    // is skipped.
+                    return [];
+                }
+            }
+
+            return ms.ToArray();
+        }
+    }
+
+    /// <summary>
+    /// A candidate only counts as a cover when it is big enough to be a page and its
+    /// bytes actually look like an image — an image-named entry with garbage content
+    /// must not ship as a cover.
+    /// </summary>
+    private static bool IsPlausibleCoverImage(byte[] data)
+        => data.Length >= 1_000 && DetectImageFormat(data).Format != null;
+
+    /// <summary>
+    /// Returns the file-name part of an archive entry key, tolerating both
+    /// separator styles — RAR entries commonly use backslashes, which
+    /// <see cref="Path.GetFileName(string)"/> does not treat as separators on Unix.
+    /// </summary>
+    private static string GetArchiveEntryFileName(string key)
+    {
+        var idx = key.LastIndexOfAny(['/', '\\']);
+        return idx >= 0 ? key[(idx + 1)..] : key;
+    }
+
+    /// <summary>
+    /// Filters archive junk that must never be picked as a cover: macOS resource
+    /// forks (__MACOSX) and hidden dot-files (e.g. ._page-1.jpg AppleDouble stubs).
+    /// </summary>
+    private static bool IsJunkComicEntry(string key)
+    {
+        return key.Contains("__MACOSX", StringComparison.OrdinalIgnoreCase)
+            || GetArchiveEntryFileName(key).StartsWith('.');
     }
 
     [ExcludeFromCodeCoverage] // Requires PDFium native library — tested via integration/E2E
@@ -758,6 +993,12 @@ public class CoverImageProvider : IDynamicImageProvider
         if (data[offset] == 0x47 && data[offset + 1] == 0x49 && data[offset + 2] == 0x46)
         {
             return (ImageFormat.Gif, offset);
+        }
+
+        // BMP: 42 4D ("BM")
+        if (data[offset] == 0x42 && data[offset + 1] == 0x4D)
+        {
+            return (ImageFormat.Bmp, offset);
         }
 
         // WebP: RIFF....WEBP

@@ -27,6 +27,7 @@ A Jellyfin plugin that provides **cover-image extraction** for books, audiobooks
 |--------|------|-------------------|
 | PDF | Book / Magazine / Comic | First-page rendering via built-in PDFium (no external tools needed) |
 | EPUB | Book | Archive introspection with 3-tier image search |
+| CBZ / CBR | Comic / Manga | First page in natural page order (built-in ZIP/RAR reading, no external tools) |
 | MP3 | Audiobook / Music | Embedded art via `ffmpeg` raw stream copy |
 | M4A / M4B | Audiobook / Music | Embedded art via `ffmpeg` raw stream copy |
 | FLAC | Audiobook / Music | Embedded art via `ffmpeg` raw stream copy |
@@ -51,6 +52,17 @@ EPUBs are ZIP archives. When other plugins fail to extract a cover, SmartCovers 
 2. **By path** -- any image file with `cover` in its full archive path (e.g., `OEBPS/Images/cover-image.jpg`).
 3. **By size** -- the largest image in the archive (above 5 KB, to skip icons and logos).
 
+### CBZ / CBR -- Comic Archive First Page
+
+Comic archives are containers of page images: CBZ is a ZIP, CBR is a RAR. SmartCovers opens them with format detection based on the file **content, not the extension** -- mislabeled archives (a RAR renamed to `.cbz`, a ZIP renamed to `.cbr`) are common in the wild and still work. Both RAR4 and RAR5 are supported, including solid archives.
+
+Cover selection follows comic conventions:
+
+1. **Explicit cover entry** -- an image named `cover`, `portada`, `front`, `frontcover`, or `book_cover` anywhere in the archive wins.
+2. **First page in natural order** -- otherwise the first image page is the cover, using *natural sort* so `page-2.jpg` correctly precedes `page-10.jpg` (plain alphabetical order would not).
+
+macOS junk entries (`__MACOSX/`, AppleDouble `._*` files), hidden files, and tiny images (icons/thumbnails) are skipped, and every candidate is verified by magic bytes before being used -- an entry with an image extension but garbage content is passed over. Everything runs in-process; no external tools are required.
+
 ### Audio -- Raw Stream Copy with Magic-Byte Detection
 
 Jellyfin's built-in Image Extractor uses ffmpeg to *decode* embedded artwork. This fails when the codec tag does not match the actual data -- a common problem in MP3 files where JPEG cover art is tagged as PNG in ID3 metadata.
@@ -62,6 +74,7 @@ SmartCovers sidesteps this entirely by using `ffmpeg -vcodec copy` to **raw-copy
 | `FF D8 FF` | JPEG |
 | `89 50 4E 47` | PNG |
 | `47 49 46` | GIF |
+| `42 4D` | BMP |
 | `52 49 46 46 ... 57 45 42 50` | WebP |
 
 Any leading null/padding bytes injected by the raw stream copy are stripped automatically.
@@ -99,12 +112,12 @@ Then install **SmartCovers** from the plugin catalog and restart Jellyfin.
 
 ### From Releases
 
-1. Download `smart-covers_7.0.0.0.zip` from the [latest release](https://github.com/GeiserX/smart-covers/releases/latest).
+1. Download `smart-covers_7.3.0.0.zip` from the [latest release](https://github.com/GeiserX/smart-covers/releases/latest).
 2. Extract the contents into your Jellyfin plugins directory:
    ```
-   <jellyfin-config>/plugins/SmartCovers_7.0.0.0/
+   <jellyfin-config>/plugins/SmartCovers_7.3.0.0/
    ```
-   The zip contains `SmartCovers.dll`, `PDFtoImage.lib` (the PDFtoImage managed library, shipped with a `.lib` extension so Jellyfin's plugin scanner skips it), and native PDFium libraries for all platforms under `runtimes/<rid>/native/`.
+   The zip contains `SmartCovers.dll`, `PDFtoImage.lib` (the PDFtoImage managed library, shipped with a `.lib` extension so Jellyfin's plugin scanner skips it), `SharpCompress.dll` (CBZ/CBR archive reading), and native PDFium libraries for all platforms under `runtimes/<rid>/native/`.
 3. Restart Jellyfin.
 
 ### Building from Source
@@ -113,7 +126,7 @@ Then install **SmartCovers** from the plugin catalog and restart Jellyfin.
 dotnet publish SmartCovers/SmartCovers.csproj -c Release -o publish
 ```
 
-The output will be in the `publish/` directory. Copy `SmartCovers.dll`, the PDFtoImage managed library (rename `PDFtoImage.dll` to `PDFtoImage.lib` so Jellyfin's plugin scanner skips it), and the `runtimes/` folder containing native PDFium libraries to your plugins directory.
+The output will be in the `publish/` directory. Copy `SmartCovers.dll`, the PDFtoImage managed library (rename `PDFtoImage.dll` to `PDFtoImage.lib` so Jellyfin's plugin scanner skips it), `SharpCompress.dll`, and the `runtimes/` folder containing native PDFium libraries to your plugins directory.
 
 ## Requirements
 
@@ -123,7 +136,7 @@ The output will be in the `publish/` directory. Copy `SmartCovers.dll`, the PDFt
 | `ffmpeg` | Audio covers | Bundled with Jellyfin Docker images |
 | [Bookshelf plugin](https://github.com/jellyfin/jellyfin-plugin-bookshelf) v13+ | EPUB covers | Recommended; handles standard EPUB covers as primary provider |
 
-PDF rendering requires no external dependencies -- the native PDFium library is bundled with the plugin for all platforms (Linux x64/arm64/musl, macOS x64/arm64, Windows x64/x86/arm64).
+PDF rendering requires no external dependencies -- the native PDFium library is bundled with the plugin for all platforms (Linux x64/arm64/musl, macOS x64/arm64, Windows x64/x86/arm64). CBZ/CBR extraction is pure managed code (SharpCompress) and works everywhere with no external dependencies either.
 
 ## Configuration
 
@@ -149,6 +162,10 @@ The plugin settings page includes a **Libraries** section where you can enable o
 - Confirm `ffmpeg` is available: run `which ffmpeg` inside the container.
 - Check the Jellyfin log for `ffmpeg not found`.
 
+**Comic (CBZ/CBR) covers are not extracted**
+- Grep the Jellyfin log for `Failed to extract comic cover` -- corrupt archives are skipped (the online fallback still applies).
+- Archives whose images are all smaller than 1 KB, or that contain no image entries at all, produce no cover by design.
+
 **Covers appear for some items but not others**
 - The plugin only acts as a fallback. If a higher-priority provider already supplied a cover, this plugin will not run.
 - To force re-extraction, delete the existing cover image for the item in Jellyfin and rescan the library.
@@ -170,4 +187,4 @@ The plugin settings page includes a **Libraries** section where you can enable o
 
 ## License
 
-This project is licensed under the [GNU General Public License v3.0](LICENSE).
+This project is licensed under the [GNU General Public License v3.0](LICENSE). Bundled third-party components are listed in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

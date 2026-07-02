@@ -33,6 +33,16 @@ public class DetectImageFormatTests
     }
 
     [Fact]
+    public void DetectImageFormat_Bmp_Detected()
+    {
+        // BM + minimal header bytes
+        var data = new byte[] { 0x42, 0x4D, 0x46, 0x00, 0x00, 0x00 };
+        var (format, offset) = CoverImageProvider.DetectImageFormat(data);
+        Assert.Equal(ImageFormat.Bmp, format);
+        Assert.Equal(0, offset);
+    }
+
+    [Fact]
     public void DetectImageFormat_WebP_Detected()
     {
         // RIFF....WEBP

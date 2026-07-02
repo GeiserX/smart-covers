@@ -5,3 +5,7 @@ obj/
 .vs/
 .idea/
 *.nupkg
+
+# OMC runtime state + test artifacts
+.omc/
+SmartCovers.Tests/TestResults/

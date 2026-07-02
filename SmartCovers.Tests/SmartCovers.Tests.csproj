@@ -19,4 +19,8 @@
     <ProjectReference Include="../SmartCovers/SmartCovers.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="Fixtures/**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
