@@ -7,7 +7,10 @@
 
 ## TL;DR for Sergio (read this first — updated each cycle)
 
-- **Where it stands:** CBZ/CBR extraction implemented + 190/190 tests green locally; review pass next, then PR.
+- **Where it stands:** **PR #18 open, required `build` check GREEN on the PR** (main's workflow now runs
+  builds on pull requests with release steps gated to push — the PR-#12 catch-22 is gone), 191/191 tests
+  green locally AND on CI. **Blocked on Sergio: merge approval** (normal merge, no admin bypass). After
+  merge: push-to-main run releases v7.3.0.0 → update manifest.json → answer issue #17.
 - **Loop:** /research! → /implement! → /review-pr! → (back to research)
 - **Open vs closed:** 0 closed / 1 open _(update each entry)_
 
@@ -74,5 +77,24 @@
   confirmed in publish output; meta.json whitelist untouched. Hygiene: dropped an unused using.
 - **Tally:** 0 closed / 1 open.
 - **CI / tests:** local suite **191 pass / 0 skip / 0 fail**; commit amended on feat/cbz-cbr-covers.
-- **Next:** push branch + open PR (Closes #17). Note: repo ruleset requires the `build` check, which
-  only runs on push to main — same catch-22 as the previous release PR; merging will need Sergio.
+- **Next:** push branch + open PR (Closes #17).
+
+### Entry 4 — PR #18 open, CI green on the PR itself (2026-07-03)
+
+- **PR:** https://github.com/GeiserX/smart-covers/pull/18 (branch `feat/cbz-cbr-covers`, Closes #17).
+- Main had moved since the branch point by 3 CI-only commits (#14 run build on PRs + gate release steps
+  to push, #15 GitHub-hosted ubuntu-latest, #16 checkout v7). Only `build.yml` overlaps and the hunks
+  compose cleanly — the PR is MERGEABLE and its merge-ref run used the combined workflow.
+- **The PR-#12 catch-22 no longer exists:** the required `build` check ran ON the pull request and is
+  **green** — `check-version` ✓, restore/build ✓, **tests ✓ (the full suite passed on CI)**, package ✓
+  (with `SharpCompress.dll`), checksum ✓; release/Pages steps correctly **skipped** on the
+  pull_request event (verified: no new tag, no new release — v7.2.0.0 still latest). GitGuardian ✓;
+  CodeRabbit pending (not blocking per standing practice).
+- One scare handled: before inspecting main's new workflow I believed the PR run might publish
+  v7.3.0.0 prematurely (my stale local copy of `build.yml` had no event gates); cancel arrived after
+  completion — but the gates on main meant nothing was released. Verified against tags + releases.
+- **Tally:** 0 closed / 1 open (issue #17 — PR awaits Sergio's merge approval; then release + manifest
+  + issue answer).
+- **CI / tests:** PR run 28648749685 **success** (build+tests+package); local 191/0/0.
+- **Next:** Sergio merges → push-to-main run tags + releases v7.3.0.0 → update `manifest.json`
+  (documented manual step) → comment + close issue #17.
