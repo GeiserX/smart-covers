@@ -202,6 +202,47 @@ public class ComicCoverTests
     }
 
     [Fact]
+    public async Task GetImage_Cbz_TiffEntries_DoNotConsumeCandidateSlots()
+    {
+        var provider = CreateProvider();
+        var tmpDir = Path.Combine(Path.GetTempPath(), $"cbz-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tmpDir);
+
+        try
+        {
+            // TIFF has no magic-byte detector, so a .tiff entry can never ship as
+            // a cover — it must be excluded up front rather than burn candidate
+            // attempts. More TIFFs than the cap, all sorting before the real page.
+            var tiff = new byte[6_000];
+            tiff[0] = 0x49; // II*\0 (little-endian TIFF)
+            tiff[1] = 0x49;
+            tiff[2] = 0x2A;
+            tiff[3] = 0x00;
+
+            var entries = new Dictionary<string, byte[]>();
+            for (var i = 1; i <= 6; i++)
+            {
+                entries[$"a-page-{i}.tiff"] = tiff;
+            }
+
+            entries["b-page-1.png"] = CreateFakePng(6_000);
+            var cbzPath = CreateCbz(tmpDir, entries);
+
+            var item = new Mock<Audio>();
+            item.SetupGet(i => i.Path).Returns(cbzPath);
+            item.SetupGet(i => i.Name).Returns("Test Comic");
+
+            var result = await provider.GetImage(item.Object, ImageType.Primary, CancellationToken.None);
+            Assert.True(result.HasImage);
+            Assert.Equal(ImageFormat.Png, result.Format);
+        }
+        finally
+        {
+            Directory.Delete(tmpDir, true);
+        }
+    }
+
+    [Fact]
     public async Task GetImage_Cbz_ManyTinyImages_DoNotConsumeCandidateSlots()
     {
         var provider = CreateProvider();

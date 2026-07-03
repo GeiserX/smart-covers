@@ -35,11 +35,43 @@ public class DetectImageFormatTests
     [Fact]
     public void DetectImageFormat_Bmp_Detected()
     {
-        // BM + minimal header bytes
-        var data = new byte[] { 0x42, 0x4D, 0x46, 0x00, 0x00, 0x00 };
+        // "BM" + file size + reserved + pixel-data offset + DIB header size (40 = BITMAPINFOHEADER)
+        var data = new byte[]
+        {
+            0x42, 0x4D,              // BM
+            0x46, 0x00, 0x00, 0x00,  // file size
+            0x00, 0x00, 0x00, 0x00,  // reserved
+            0x36, 0x00, 0x00, 0x00,  // pixel data offset
+            0x28, 0x00, 0x00, 0x00   // DIB header size = 40
+        };
         var (format, offset) = CoverImageProvider.DetectImageFormat(data);
         Assert.Equal(ImageFormat.Bmp, format);
         Assert.Equal(0, offset);
+    }
+
+    [Fact]
+    public void DetectImageFormat_BmpMagicWithoutValidDibHeader_NotDetected()
+    {
+        // Starts with "BM" but the DIB-header-size field is garbage — arbitrary
+        // data must not pass as a BMP.
+        var data = new byte[18];
+        data[0] = 0x42;
+        data[1] = 0x4D;
+        data[14] = 0xDE;
+        data[15] = 0xAD;
+        data[16] = 0xBE;
+        data[17] = 0xEF;
+        var (format, _) = CoverImageProvider.DetectImageFormat(data);
+        Assert.Null(format);
+    }
+
+    [Fact]
+    public void DetectImageFormat_BmpMagicTruncated_NotDetected()
+    {
+        // Too short to contain a DIB header size at all.
+        var data = new byte[] { 0x42, 0x4D, 0x46, 0x00, 0x00, 0x00 };
+        var (format, _) = CoverImageProvider.DetectImageFormat(data);
+        Assert.Null(format);
     }
 
     [Fact]

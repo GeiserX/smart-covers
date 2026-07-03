@@ -44,6 +44,15 @@ public class CoverImageProvider : IDynamicImageProvider
         ".cbz", ".cbr"
     };
 
+    // Comic candidates are limited to formats DetectImageFormat can verify: an
+    // extension it can never validate (.tif/.tiff) would only waste candidate
+    // attempts and can never ship as a cover anyway. (The EPUB path keeps the
+    // wider ImageExtensions set — it trusts extensions by design.)
+    private static readonly HashSet<string> ComicImageExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"
+    };
+
     // Upper bound on how many archive entries a single comic extraction may open.
     // The cover is virtually always the first candidate; the cap keeps a
     // pathological archive (thousands of junk "images") from stalling a scan.
@@ -318,32 +327,49 @@ public class CoverImageProvider : IDynamicImageProvider
         using var fileStream = File.OpenRead(path);
         using var archive = ArchiveFactory.OpenArchive(fileStream);
 
-        // Size gate up front so icons/thumbnails (<1 KB) and absurdly large entries
-        // never consume one of the few candidate slots. Size <= 0 means the header
-        // doesn't report one — let those through; the guards while copying decide.
-        var imageEntries = archive.Entries
-            .Where(e => !e.IsDirectory
-                && !string.IsNullOrEmpty(e.Key)
-                && (e.Size <= 0 || (e.Size >= 1_000 && e.Size <= MaxComicEntryBytes))
-                && IsImageFile(GetArchiveEntryFileName(e.Key))
-                && !IsJunkComicEntry(e.Key))
-            .ToList();
+        // Single bounded pass over the entry headers: a crafted archive can carry
+        // hundreds of thousands of image-named entries, so never materialize or
+        // fully sort them. Two small insertion-sorted lists (each capped at
+        // MaxComicCandidateAttempts) capture the only entries that can matter:
+        // the biggest cover-named ones and the naturally-first pages.
+        // Size gate up front so icons/thumbnails (<1 KB) and absurdly large
+        // entries never consume a slot; Size <= 0 means the header doesn't report
+        // one — let those through, the guards while copying decide.
+        var coverNamed = new List<IArchiveEntry>();
+        var firstPages = new List<IArchiveEntry>();
 
-        if (imageEntries.Count == 0)
+        foreach (var entry in archive.Entries)
         {
-            return new DynamicImageResponse { HasImage = false };
+            if (entry.IsDirectory
+                || string.IsNullOrEmpty(entry.Key)
+                || (entry.Size > 0 && (entry.Size < 1_000 || entry.Size > MaxComicEntryBytes))
+                || !ComicImageExtensions.Contains(Path.GetExtension(GetArchiveEntryFileName(entry.Key)))
+                || IsJunkComicEntry(entry.Key))
+            {
+                continue;
+            }
+
+            if (CoverFileNames.Contains(Path.GetFileNameWithoutExtension(GetArchiveEntryFileName(entry.Key))))
+            {
+                InsertBounded(coverNamed, entry, static (x, y) => y.Size.CompareTo(x.Size), MaxComicCandidateAttempts);
+            }
+
+            InsertBounded(firstPages, entry, static (x, y) => NaturalStringComparer.Instance.Compare(x.Key, y.Key), MaxComicCandidateAttempts);
         }
 
         // Candidate priority: explicit cover entries (largest first) ahead of pages
-        // in natural sort order. Distinct() collapses the overlap — both sequences
-        // enumerate the same entry instances, so reference equality suffices.
-        var candidates = imageEntries
-            .Where(e => CoverFileNames.Contains(Path.GetFileNameWithoutExtension(GetArchiveEntryFileName(e.Key!))))
-            .OrderByDescending(e => e.Size)
-            .Concat(imageEntries.OrderBy(e => e.Key!, NaturalStringComparer.Instance))
+        // in natural sort order. Distinct() collapses the overlap — both lists hold
+        // the same entry instances, so reference equality suffices.
+        var candidates = coverNamed
+            .Concat(firstPages)
             .Distinct()
             .Take(MaxComicCandidateAttempts)
             .ToList();
+
+        if (candidates.Count == 0)
+        {
+            return new DynamicImageResponse { HasImage = false };
+        }
 
         var data = archive.IsSolid || archive.Type == SharpCompress.Common.ArchiveType.SevenZip
             ? await ExtractBestCandidateForward(archive, candidates, cancellationToken).ConfigureAwait(false)
@@ -471,6 +497,32 @@ public class CoverImageProvider : IDynamicImageProvider
     /// </summary>
     private static bool IsPlausibleCoverImage(byte[] data)
         => data.Length >= 1_000 && DetectImageFormat(data).Format != null;
+
+    /// <summary>
+    /// Inserts <paramref name="item"/> into a list kept sorted by
+    /// <paramref name="comparison"/> and capped at <paramref name="maxCount"/>
+    /// elements — the bounded top-K selection that lets one pass over an archive's
+    /// headers replace sorting every entry. Stable: ties keep encounter order.
+    /// </summary>
+    private static void InsertBounded<T>(List<T> list, T item, Comparison<T> comparison, int maxCount)
+    {
+        var index = 0;
+        while (index < list.Count && comparison(list[index], item) <= 0)
+        {
+            index++;
+        }
+
+        if (index >= maxCount)
+        {
+            return;
+        }
+
+        list.Insert(index, item);
+        if (list.Count > maxCount)
+        {
+            list.RemoveAt(list.Count - 1);
+        }
+    }
 
     /// <summary>
     /// Returns the file-name part of an archive entry key, tolerating both
@@ -995,10 +1047,17 @@ public class CoverImageProvider : IDynamicImageProvider
             return (ImageFormat.Gif, offset);
         }
 
-        // BMP: 42 4D ("BM")
-        if (data[offset] == 0x42 && data[offset + 1] == 0x4D)
+        // BMP: "BM" + a known DIB-header size at offset 14 (12 = BITMAPCOREHEADER,
+        // 40/52/56 = BITMAPINFOHEADER v1-v3, 64 = OS/2 v2, 108/124 = v4/v5).
+        // "BM" alone matches far too much arbitrary data to trust for entries
+        // coming out of untrusted archives.
+        if (offset + 18 <= data.Length && data[offset] == 0x42 && data[offset + 1] == 0x4D)
         {
-            return (ImageFormat.Bmp, offset);
+            var dibSize = data[offset + 14] | (data[offset + 15] << 8) | (data[offset + 16] << 16) | (data[offset + 17] << 24);
+            if (dibSize is 12 or 40 or 52 or 56 or 64 or 108 or 124)
+            {
+                return (ImageFormat.Bmp, offset);
+            }
         }
 
         // WebP: RIFF....WEBP

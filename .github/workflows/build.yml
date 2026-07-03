@@ -81,6 +81,9 @@ jobs:
           # bundled copy is the fallback for future Jellyfin versions that may stop
           # shipping it (Plugin.cs registers the Resolving handler).
           cp publish/SharpCompress.dll release/
+          # Redistribution of the bundled MIT/BSD components requires their
+          # notices to travel with the binaries.
+          cp THIRD-PARTY-NOTICES.md release/
           # SkiaSharp is intentionally NOT bundled — Jellyfin already ships it (≥ 3.116.1).
           # PDFtoImage 5.2.1 requires SkiaSharp >= 3.116.1 which Jellyfin satisfies.
           # Bundling a second copy would cause assembly-loading conflicts at runtime.
