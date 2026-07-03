@@ -60,6 +60,41 @@ jobs:
           files: SmartCovers.Tests/TestResults/*/coverage.cobertura.xml
           fail_ci_if_error: false
 
+      - name: Merge SharpCompress into SmartCovers.dll (ILRepack)
+        run: |
+          # Jellyfin 10.11 servers ship no SharpCompress, and the plugin scanner's
+          # GetTypes() pass resolves compiler-generated fields BEFORE any plugin
+          # code (or Resolving handler) can run — an external SharpCompress
+          # reference therefore marks the plugin NotSupported at load time.
+          # Internalizing the library into SmartCovers.dll removes the external
+          # reference entirely, on every Jellyfin version.
+          dotnet tool install -g dotnet-ilrepack
+          NETCORE_LIB=$(dotnet --list-runtimes | awk '$1=="Microsoft.NETCore.App"{v=$2; p=$3} END{gsub(/[][]/,"",p); print p "/" v}')
+          ASPNET_LIB=$(dotnet --list-runtimes | awk '$1=="Microsoft.AspNetCore.App"{v=$2; p=$3} END{gsub(/[][]/,"",p); print p "/" v}')
+          LIBS=(/lib:publish "/lib:$NETCORE_LIB" "/lib:$ASPNET_LIB")
+          for d in \
+            "$HOME/.nuget/packages/jellyfin.controller/10.11.0/lib/net9.0" \
+            "$HOME/.nuget/packages/jellyfin.model/10.11.0/lib/net9.0" \
+            "$HOME/.nuget/packages/jellyfin.data/10.11.0/lib/net9.0" \
+            $HOME/.nuget/packages/microsoft.extensions.logging.abstractions/*/lib/net9.0; do
+            [ -d "$d" ] && LIBS+=("/lib:$d")
+          done
+          mkdir -p merged
+          "$HOME/.dotnet/tools/ilrepack" /internalize \
+            /out:merged/SmartCovers.dll \
+            publish/SmartCovers.dll publish/SharpCompress.dll \
+            "${LIBS[@]}"
+          ls -la merged/
+
+      - name: Test the merged assembly without SharpCompress present
+        run: |
+          # Regression gate for the NotSupported bug class: the merged DLL must
+          # pass the entire suite with NO SharpCompress.dll available anywhere.
+          BIN=SmartCovers.Tests/bin/Release/net9.0
+          cp merged/SmartCovers.dll "$BIN/SmartCovers.dll"
+          rm -f "$BIN/SharpCompress.dll"
+          dotnet test SmartCovers.Tests/SmartCovers.Tests.csproj --configuration Release --no-build --verbosity minimal
+
       - name: Get version from csproj
         id: version
         run: |
@@ -69,19 +104,16 @@ jobs:
       - name: Create plugin package
         run: |
           mkdir -p release
-          cp publish/SmartCovers.dll release/
+          # The MERGED assembly (SharpCompress internalized) is what ships — see
+          # the ILRepack step above for why a separate SharpCompress.dll would
+          # break Jellyfin 10.11's plugin scan.
+          cp merged/SmartCovers.dll release/
           # Rename PDFtoImage.dll to .lib so Jellyfin's plugin scanner won't
           # try to load it as a managed assembly (it rejects the SkiaSharp
           # version mismatch). Plugin.cs registers a resolver at runtime.
           cp publish/PDFtoImage.dll release/PDFtoImage.lib
-          # SharpCompress (CBZ/CBR extraction) ships under its real name: it is NOT
-          # in the meta.json assemblies whitelist, so Jellyfin's scanner never loads
-          # or GetTypes()-scans it — no rename needed. At runtime Jellyfin's own
-          # SharpCompress (same version as the csproj pin) resolves first; this
-          # bundled copy is the fallback for future Jellyfin versions that may stop
-          # shipping it (Plugin.cs registers the Resolving handler).
-          cp publish/SharpCompress.dll release/
-          # Redistribution of the bundled MIT/BSD components requires their
+          # Redistribution of the bundled MIT/BSD components (including the
+          # SharpCompress code merged into SmartCovers.dll) requires their
           # notices to travel with the binaries.
           cp THIRD-PARTY-NOTICES.md release/
           # SkiaSharp is intentionally NOT bundled — Jellyfin already ships it (≥ 3.116.1).

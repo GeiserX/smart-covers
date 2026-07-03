@@ -6,7 +6,7 @@ copyright notices are reproduced or referenced here as required by their terms.
 
 | Component | Version source | License | Copyright |
 |-----------|----------------|---------|-----------|
-| [SharpCompress](https://github.com/adamhathcock/sharpcompress) (`SharpCompress.dll`) | NuGet | MIT | © 2014 Adam Hathcock |
+| [SharpCompress](https://github.com/adamhathcock/sharpcompress) (merged into `SmartCovers.dll`) | NuGet | MIT | © 2014 Adam Hathcock |
 | [PDFtoImage](https://github.com/sungaila/PDFtoImage) (`PDFtoImage.lib`) | NuGet | MIT | © David Sungaila |
 | [PDFium](https://pdfium.googlesource.com/pdfium/) (native `pdfium` binaries under `runtimes/`, via [bblanchon.PDFium](https://github.com/bblanchon/pdfium-binaries)) | NuGet | Apache-2.0 / BSD-3-Clause | © PDFium Authors |
 | [SkiaSharp](https://github.com/mono/SkiaSharp) (not bundled — provided by the Jellyfin server) | NuGet | MIT | © Xamarin Inc. / Microsoft Corporation |

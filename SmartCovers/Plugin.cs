@@ -60,26 +60,13 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
                 }
             }
 
-            // SharpCompress (CBZ/CBR extraction): Jellyfin ships its own copy
-            // (MediaBrowser.Providers → Default ALC), which plugin code binds to
-            // through the Default-ALC fallback — the csproj pins the same version,
-            // so the API surface matches. This branch only fires if a future
-            // Jellyfin stops shipping SharpCompress; then the copy bundled in the
-            // plugin folder takes over. The "assemblies" whitelist in meta.json
-            // keeps the plugin scanner from GetTypes()-scanning the bundled DLL at
-            // startup (that scan, not runtime resolution, is what breaks plugins).
-            if (string.Equals(name.Name, "SharpCompress", StringComparison.OrdinalIgnoreCase))
-            {
-                var pluginDir = Path.GetDirectoryName(typeof(Plugin).Assembly.Location);
-                if (pluginDir != null)
-                {
-                    var dllPath = Path.Combine(pluginDir, "SharpCompress.dll");
-                    if (File.Exists(dllPath))
-                    {
-                        return AssemblyLoadContext.Default.LoadFromAssemblyPath(dllPath);
-                    }
-                }
-            }
+            // SharpCompress (CBZ/CBR extraction) needs no resolver branch: the CI
+            // merges it INTO SmartCovers.dll (ILRepack, internalized), so the
+            // shipped assembly carries no external SharpCompress reference at all.
+            // That is deliberate — Jellyfin 10.11 servers ship no SharpCompress,
+            // and the plugin scanner's GetTypes() pass resolves compiler-generated
+            // fields BEFORE any plugin code (including this handler) runs, so an
+            // unresolvable reference marks the plugin NotSupported at load time.
 
             // PDFtoImage references SkiaSharp 3.119.x but Jellyfin ships 3.116.x.
             // Redirect to the version already loaded by Jellyfin — the API surface
