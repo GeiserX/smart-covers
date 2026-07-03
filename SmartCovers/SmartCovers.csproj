@@ -3,8 +3,8 @@
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
     <RootNamespace>SmartCovers</RootNamespace>
-    <AssemblyVersion>7.2.0.0</AssemblyVersion>
-    <FileVersion>7.2.0.0</FileVersion>
+    <AssemblyVersion>7.3.0.0</AssemblyVersion>
+    <FileVersion>7.3.0.0</FileVersion>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <NoWarn>CA1416</NoWarn>
@@ -17,6 +17,11 @@
     <PackageReference Include="Jellyfin.Model" Version="10.11.0" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.*" />
     <PackageReference Include="PDFtoImage" Version="5.2.1" />
+    <!-- Pinned to the exact version Jellyfin 10.11 ships: plugin dependencies
+         resolve through the Default ALC first (PluginLoadContext's resolver is a
+         no-op for plugin-local DLLs), so at runtime this binds the server's own
+         SharpCompress — compiling against the same version rules out API drift. -->
+    <PackageReference Include="SharpCompress" Version="0.49.1" />
   </ItemGroup>
 
   <ItemGroup>

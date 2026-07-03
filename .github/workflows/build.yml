@@ -74,6 +74,13 @@ jobs:
           # try to load it as a managed assembly (it rejects the SkiaSharp
           # version mismatch). Plugin.cs registers a resolver at runtime.
           cp publish/PDFtoImage.dll release/PDFtoImage.lib
+          # SharpCompress (CBZ/CBR extraction) ships under its real name: it is NOT
+          # in the meta.json assemblies whitelist, so Jellyfin's scanner never loads
+          # or GetTypes()-scans it — no rename needed. At runtime Jellyfin's own
+          # SharpCompress (same version as the csproj pin) resolves first; this
+          # bundled copy is the fallback for future Jellyfin versions that may stop
+          # shipping it (Plugin.cs registers the Resolving handler).
+          cp publish/SharpCompress.dll release/
           # SkiaSharp is intentionally NOT bundled — Jellyfin already ships it (≥ 3.116.1).
           # PDFtoImage 5.2.1 requires SkiaSharp >= 3.116.1 which Jellyfin satisfies.
           # Bundling a second copy would cause assembly-loading conflicts at runtime.
@@ -119,7 +126,7 @@ jobs:
             "framework": "net9.0",
             "owner": "GeiserX",
             "overview": "Cover extraction for books, audiobooks, comics, and music — with online fallback via Open Library & Google Books.",
-            "description": "Cover provider for Jellyfin libraries. Renders PDF first pages via built-in PDFium (no external tools needed), searches EPUB archives for cover images, and extracts embedded artwork from audio files via ffmpeg. When local extraction fails, automatically fetches covers from Open Library and Google Books as a last resort.",
+            "description": "Cover provider for Jellyfin libraries. Renders PDF first pages via built-in PDFium (no external tools needed), searches EPUB archives for cover images, extracts the first page from CBZ/CBR comic archives, and extracts embedded artwork from audio files via ffmpeg. When local extraction fails, automatically fetches covers from Open Library and Google Books as a last resort.",
             "category": "General",
             "timestamp": "${TIMESTAMP}",
             "assemblies": [
@@ -149,7 +156,7 @@ jobs:
               "guid": "82eef869-3f18-4678-968d-06efc10b60cf",
               "name": "SmartCovers",
               "overview": "Cover extraction for books, audiobooks, comics, and music — with online fallback via Open Library & Google Books.",
-              "description": "Cover provider for Jellyfin libraries. Renders PDF first pages via built-in PDFium (no external tools needed), searches EPUB archives for cover images, and extracts embedded artwork from audio files via ffmpeg. When local extraction fails, automatically fetches covers from Open Library and Google Books as a last resort.",
+              "description": "Cover provider for Jellyfin libraries. Renders PDF first pages via built-in PDFium (no external tools needed), searches EPUB archives for cover images, extracts the first page from CBZ/CBR comic archives, and extracts embedded artwork from audio files via ffmpeg. When local extraction fails, automatically fetches covers from Open Library and Google Books as a last resort.",
               "owner": "GeiserX",
               "category": "General",
               "versions": [
