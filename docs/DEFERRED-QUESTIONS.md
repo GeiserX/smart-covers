@@ -17,12 +17,11 @@
 - **Context:** Repo CLAUDE.md lists "Add NuGet dependencies" under *Ask First*. Issue #17 asks for CBR
   (RAR comic archive) support; .NET has no built-in RAR reader, so the feature intrinsically requires a
   RAR-capable library (candidate: SharpCompress — MIT, pure managed).
-- **Default taken:** Added `SharpCompress` (MIT, pure managed, single DLL, no transitive packages),
-  pinned to **0.49.1 — the exact version Jellyfin 10.11 itself ships**. Rationale: plugin dependencies
-  resolve through Jellyfin's Default ALC first, so at runtime the plugin binds the server's own copy;
-  compiling against the same version rules out API drift. The bundled DLL is only a fallback for future
-  Jellyfin versions (a `Resolving` handler in `Plugin.cs` wires it). MIT notice added in
-  `THIRD-PARTY-NOTICES.md`. The directive to implement issue #17 is read as covering its intrinsic
-  dependency.
+- **Default taken:** Added `SharpCompress` (MIT, pure managed, no transitive packages), pinned 0.49.1.
+  **Since v7.3.2.0 it is ILRepack-merged INTO `SmartCovers.dll`** — the earlier "bind Jellyfin's own
+  copy" rationale was based on a master-branch fact (Jellyfin 10.11 actually ships NO SharpCompress),
+  which made v7.3.0.0/v7.3.1.0 load as `NotSupported` on real 10.11 servers. MIT notice ships in
+  `THIRD-PARTY-NOTICES.md` inside the zip. The directive to implement issue #17 is read as covering
+  its intrinsic dependency.
 - **To change:** Drop the dependency and ship CBZ-only (zip is handled by System.IO.Compression in-box),
   answering the issue that CBR needs a dependency Sergio declined. One commit to revert.
