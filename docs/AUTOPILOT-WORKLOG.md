@@ -7,10 +7,8 @@
 
 ## TL;DR for Sergio (read this first — updated each cycle)
 
-- **Where it stands:** **PR #18 open, required `build` check GREEN on the PR** (main's workflow now runs
-  builds on pull requests with release steps gated to push — the PR-#12 catch-22 is gone), 191/191 tests
-  green locally AND on CI. **Blocked on Sergio: merge approval** (normal merge, no admin bypass). After
-  merge: push-to-main run releases v7.3.0.0 → update manifest.json → answer issue #17.
+- **Where it stands:** **GOAL MET.** PR #18 merged (Sergio approved), **v7.3.0.0 released**,
+  manifest.json updated, **issue #17 answered and closed**. Loop complete; ralph state torn down.
 - **Loop:** /research! → /implement! → /review-pr! → (back to research)
 - **Open vs closed:** 0 closed / 1 open _(update each entry)_
 
@@ -98,3 +96,18 @@
 - **CI / tests:** PR run 28648749685 **success** (build+tests+package); local 191/0/0.
 - **Next:** Sergio merges → push-to-main run tags + releases v7.3.0.0 → update `manifest.json`
   (documented manual step) → comment + close issue #17.
+
+### Entry 5 — GOAL MET: merged, released, issue closed (2026-07-03)
+
+- Sergio approved; **PR #18 squash-merged** to main as `4c0fbcb` (branch deleted). Normal merge — the
+  required `build` check was green on the PR itself.
+- Push-to-main run released **v7.3.0.0**: tag + GitHub Release with `smart-covers_7.3.0.0.zip`
+  (45,036,408 bytes). Zip contents verified by download: `SmartCovers.dll`, `PDFtoImage.lib`,
+  **`SharpCompress.dll`**, `meta.json` (whitelist intact), pdfium natives.
+- **`manifest.json` updated to 7.3.0.0** (checksum `bb98ba92b4022fa3ea67ae55eb1468aa`, timestamp
+  2026-07-03T09:03:00Z) and pushed to main — the documented manual completion; Pages already serves
+  the in-run generated manifest.
+- **Issue #17: auto-closed by the merge (COMPLETED)** + explanation comment posted thanking the
+  reporter.
+- **Tally:** **1 closed / 0 open.** Loop complete → ralph state cleared; stopping.
+- **CI / tests:** release run success; local 191 pass / 0 skip / 0 fail.

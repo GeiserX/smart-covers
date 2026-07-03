@@ -9,6 +9,14 @@
     "imageUrl": "",
     "versions": [
       {
+        "version": "7.3.0.0",
+        "changelog": "CBZ/CBR comic-archive cover extraction: first page in natural order (or an explicitly named cover entry), content-sniffed format detection so mislabeled archives work, RAR4/RAR5/solid support, junk filtering and magic-byte verification. BMP artwork detection added.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/GeiserX/smart-covers/releases/download/v7.3.0.0/smart-covers_7.3.0.0.zip",
+        "checksum": "bb98ba92b4022fa3ea67ae55eb1468aa",
+        "timestamp": "2026-07-03T09:03:00Z"
+      },
+      {
         "version": "7.2.0.0",
         "changelog": "Fix a crash that could take down the whole Jellyfin server when the PDFium native library failed to load. Restore PDF cover rendering on Windows (x64/x86/arm64). Honor the JPEG quality setting. Harden native-library resolution across platforms.",
         "targetAbi": "10.11.0.0",
