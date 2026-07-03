@@ -112,12 +112,12 @@ Then install **SmartCovers** from the plugin catalog and restart Jellyfin.
 
 ### From Releases
 
-1. Download `smart-covers_7.3.0.0.zip` from the [latest release](https://github.com/GeiserX/smart-covers/releases/latest).
+1. Download `smart-covers_7.3.1.0.zip` from the [latest release](https://github.com/GeiserX/smart-covers/releases/latest).
 2. Extract the contents into your Jellyfin plugins directory:
+   ```text
+   <jellyfin-config>/plugins/SmartCovers_7.3.1.0/
    ```
-   <jellyfin-config>/plugins/SmartCovers_7.3.0.0/
-   ```
-   The zip contains `SmartCovers.dll`, `PDFtoImage.lib` (the PDFtoImage managed library, shipped with a `.lib` extension so Jellyfin's plugin scanner skips it), `SharpCompress.dll` (CBZ/CBR archive reading), and native PDFium libraries for all platforms under `runtimes/<rid>/native/`.
+   The zip contains `SmartCovers.dll`, `PDFtoImage.lib` (the PDFtoImage managed library, shipped with a `.lib` extension so Jellyfin's plugin scanner skips it), `SharpCompress.dll` (CBZ/CBR archive reading), native PDFium libraries for all platforms under `runtimes/<rid>/native/`, and `THIRD-PARTY-NOTICES.md`.
 3. Restart Jellyfin.
 
 ### Building from Source
