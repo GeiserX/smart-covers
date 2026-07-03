@@ -155,5 +155,10 @@
   claim — fixed, re-review clean); merged `40ed0e9`; release v7.3.2.0 (asset 44,702,474 B, merged
   SmartCovers.dll 2,166,272 B, **no SharpCompress.dll in the zip**, checksum
   `6f8de803b95439801e212a622fe07d3c`); manifest updated.
-- **Next:** live verification on the production Jellyfin 10.11 (sideload the release zip, safe
-  restart, confirm Active), then answer the reporter on #17.
+- **LIVE VERIFICATION PASSED** on the production Jellyfin **10.11.11** (the reporter's exact version):
+  release zip sideloaded, safe API restart performed only after confirming the one active session was
+  paused at 100% for >10 min (episode finished; house rule honored in spirit and letter), logs show
+  `Loaded plugin: SmartCovers 7.3.2.0` and the `/Plugins` API reports **Active** — no NotSupported.
+  Bookshelf's own SharpCompress 0.38 coexists untouched. Reporter answered on #17 with the verified
+  fix. (Side note: Jellyfin auto-tried deleting the superseded `SmartCovers_7.1.1.0` folder and hit
+  "Directory not empty" — harmless known quirk; folder left in place pending Sergio's OK.)
