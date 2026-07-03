@@ -134,3 +134,26 @@
 - **Evidence:** PR #19 merged as `3724db3`; release v7.3.1.0 (checksum `0183453565480be1d8c32d0a660c7dcc`,
   2026-07-03T09:24:36Z); manifest.json updated; local suite **194 pass / 0 skip / 0 fail**; CI green.
 - **Tally:** 1 closed / 0 open. Loop remains complete.
+
+### Entry 7 — NotSupported on real 10.11 servers; fixed by ILRepack merge, v7.3.2.0 (2026-07-03)
+
+- **Field report (issue #17 comment):** `7.3.0.0 NotSupported` on Jellyfin 10.11.11 (DavidSichau).
+- **Root cause (proven three ways):** Jellyfin **10.11 ships no SharpCompress** — the v10.11.11 tag's
+  `Directory.Packages.props` and `MediaBrowser.Providers.csproj` have no reference, and the live
+  production server's binaries contain none (the earlier "Jellyfin ships 0.49.1" research fact was
+  master-only). The plugin scanner's `GetTypes()` resolves compiler-generated FIELDS (async
+  state-machine locals `IArchive`/`IReader`/`IArchiveEntry`, cached-lambda `Comparison<IArchiveEntry>`
+  fields) at scan time — BEFORE `static Plugin()` can register any `Resolving` handler → unresolvable
+  reference → `ReflectionTypeLoadException` → **NotSupported**. PDFtoImage never hit this because its
+  types appear only as locals in sync lambdas, never as generated-type fields.
+- **Fix (v7.3.2.0, PR #21):** CI now **ILRepack-merges SharpCompress INTO SmartCovers.dll**
+  (`/internalize`) — no external reference remains; works on every Jellyfin version; dead `Resolving`
+  branch removed; separate DLL no longer packaged. New **CI regression gate**: full suite re-runs
+  against the merged assembly with `SharpCompress.dll` deleted.
+- **Evidence:** local 194/194 normal AND 194/194 against the merged DLL without SharpCompress; PR #21
+  CI green incl. the new gate; CodeRabbit reviewed BEFORE merge this time (1 actionable — stale doc
+  claim — fixed, re-review clean); merged `40ed0e9`; release v7.3.2.0 (asset 44,702,474 B, merged
+  SmartCovers.dll 2,166,272 B, **no SharpCompress.dll in the zip**, checksum
+  `6f8de803b95439801e212a622fe07d3c`); manifest updated.
+- **Next:** live verification on the production Jellyfin 10.11 (sideload the release zip, safe
+  restart, confirm Active), then answer the reporter on #17.

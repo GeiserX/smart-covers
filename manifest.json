@@ -9,6 +9,14 @@
     "imageUrl": "",
     "versions": [
       {
+        "version": "7.3.2.0",
+        "changelog": "Fix plugin loading as NotSupported on Jellyfin 10.11 servers: the CBZ/CBR archive reader (SharpCompress) is now merged into SmartCovers.dll, so the plugin scanner no longer hits an unresolvable reference. No separate SharpCompress.dll is shipped anymore.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/GeiserX/smart-covers/releases/download/v7.3.2.0/smart-covers_7.3.2.0.zip",
+        "checksum": "6f8de803b95439801e212a622fe07d3c",
+        "timestamp": "2026-07-03T09:51:52Z"
+      },
+      {
         "version": "7.3.1.0",
         "changelog": "Address review findings: stricter BMP validation (DIB header check), exclude unverifiable TIFF entries from comic candidate selection, bounded single-pass candidate selection for pathological archives, and ship THIRD-PARTY-NOTICES.md inside the plugin zip.",
         "targetAbi": "10.11.0.0",
