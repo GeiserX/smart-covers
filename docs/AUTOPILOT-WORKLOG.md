@@ -111,3 +111,26 @@
   reporter.
 - **Tally:** **1 closed / 0 open.** Loop complete → ralph state cleared; stopping.
 - **CI / tests:** release run success; local 191 pass / 0 skip / 0 fail.
+
+### Entry 6 — CodeRabbit follow-up shipped as v7.3.1.0 (2026-07-03)
+
+- Sergio flagged that PR #18 merged while CodeRabbit was still pending; its review (posted after
+  merge) contained 6 findings — all triaged, all judged worthy, all fixed in **PR #19** →
+  **v7.3.1.0**:
+  1. BMP magic hardened: "BM" alone accepted arbitrary blobs — now requires a known DIB-header size
+     (12/40/52/56/64/108/124). Positive/negative/truncated tests added.
+  2. TIFF entries excluded from comic candidates (no magic detector exists → they could only waste
+     the bounded attempts and hide a valid later page). Regression test added.
+  3. Candidate selection rewritten as one bounded pass (two insertion-sorted top-5 lists) — no more
+     materializing/fully sorting every entry of a crafted archive.
+  4. `THIRD-PARTY-NOTICES.md` now ships inside the release zip (MIT notices travel with binaries) —
+     verified present in the v7.3.1.0 asset.
+  5. CLAUDE.md "no rename" learned-pattern scoped to SharpCompress (PDFtoImage keeps `.lib`).
+  6. README bare fence labeled (MD040) + install examples bumped.
+- **Process fix:** the "don't block on CodeRabbit" shorthand inverted the real rule; corrected to
+  *always wait for CodeRabbit's review before merging and address findings once they land* (memory
+  updated). PR #19 followed it: merged only after CodeRabbit completed with **0 actionable
+  findings**.
+- **Evidence:** PR #19 merged as `3724db3`; release v7.3.1.0 (checksum `0183453565480be1d8c32d0a660c7dcc`,
+  2026-07-03T09:24:36Z); manifest.json updated; local suite **194 pass / 0 skip / 0 fail**; CI green.
+- **Tally:** 1 closed / 0 open. Loop remains complete.

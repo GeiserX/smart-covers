@@ -9,6 +9,14 @@
     "imageUrl": "",
     "versions": [
       {
+        "version": "7.3.1.0",
+        "changelog": "Address review findings: stricter BMP validation (DIB header check), exclude unverifiable TIFF entries from comic candidate selection, bounded single-pass candidate selection for pathological archives, and ship THIRD-PARTY-NOTICES.md inside the plugin zip.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/GeiserX/smart-covers/releases/download/v7.3.1.0/smart-covers_7.3.1.0.zip",
+        "checksum": "0183453565480be1d8c32d0a660c7dcc",
+        "timestamp": "2026-07-03T09:24:36Z"
+      },
+      {
         "version": "7.3.0.0",
         "changelog": "CBZ/CBR comic-archive cover extraction: first page in natural order (or an explicitly named cover entry), content-sniffed format detection so mislabeled archives work, RAR4/RAR5/solid support, junk filtering and magic-byte verification. BMP artwork detection added.",
         "targetAbi": "10.11.0.0",
