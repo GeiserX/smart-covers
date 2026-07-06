@@ -35,6 +35,10 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          # This job only reads manifest.json and deploys Pages; it never pushes
+          # back, so don't leave the GITHUB_TOKEN git credential on disk.
+          persist-credentials: false
 
       - name: Assemble site from the committed manifest
         run: |
