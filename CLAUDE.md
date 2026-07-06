@@ -118,14 +118,16 @@ https://raw.githubusercontent.com/GeiserX/smart-covers/main/manifest.json
 
 ### CI/CD
 
-GitHub Actions (`.github/workflows/build.yml`):
+Two workflows, deliberately separate:
 
-1. **Build** (all pushes) — Restores, builds, packages `SmartCovers.dll` + `build.yaml` into `smart-covers.zip`
-2. **Release** (tag pushes) — Creates GitHub Release, generates `manifest.json` with checksum
+1. **Build & release** (`.github/workflows/build.yml`) — on push to `main` and on PRs. Builds, tests, ILRepack-merges SharpCompress into `SmartCovers.dll`, packages the zip. On a version bump (new tag) it also creates the GitHub Release and prints the zip's MD5 to the job summary. It does **NOT** touch `manifest.json` or GitHub Pages.
+2. **Publish catalog** (`.github/workflows/pages.yml`) — on any push to `main` that changes `manifest.json` (or via manual `workflow_dispatch`). Publishes the committed `manifest.json` to GitHub Pages. Retryable and independent of releases.
 
-Manifest auto-commit fails due to branch protection. After each release: download zip, `md5sum`, update `manifest.json` manually, commit and push.
+**The catalog users add is the GitHub Pages URL** (`https://geiserx.github.io/smart-covers/manifest.json`), which serves the **committed** `manifest.json` — the single source of truth, with full version history. (The raw `raw.githubusercontent.com/.../main/manifest.json` URL serves the same file and also works.)
 
-Version in `SmartCovers.csproj` (`<AssemblyVersion>` + `<FileVersion>`) must match `build.yaml`. Tags: `v5.0.0.0` format.
+Release process (manifest is edited by hand — never auto-committed):
+1. Bump `<AssemblyVersion>` + `<FileVersion>` in `SmartCovers.csproj` AND `version` in `build.yaml` (they must match; tags are `v7.3.2.0` format). Merge to `main` → build.yml releases + prints the MD5.
+2. Prepend the new version entry to `manifest.json` (real checksum from the release asset / the job summary), commit, push to `main`. That push triggers pages.yml → the catalog updates within a minute. If the deploy hits a transient "try again later", just re-run pages.yml (or `workflow_dispatch` it) — no new release needed.
 
 ### Config Page
 
@@ -189,7 +191,7 @@ Things discovered during development that save time and prevent mistakes:
 - **Library API**: `GET Library/VirtualFolders` returns libraries. Each has `LibraryOptions.TypeOptions[].ImageFetchers[]` — an array of enabled provider names. `POST Library/VirtualFolders/LibraryOptions` with the full `LibraryOptions` object updates them. You must send the complete object, not a partial update.
 - **Memory footprint**: The plugin processes one item at a time, returns one small `MemoryStream` per extraction (typically <1 MB). No caching, no buffering across items. It has been verified NOT to contribute to Jellyfin memory issues during library scans.
 - **Jellyfin SDK pinning**: ALWAYS pin `Jellyfin.Controller` and `Jellyfin.Model` to the MINIMUM supported minor version (e.g., `10.11.0`), NEVER use wildcards like `10.11.*`. Wildcards resolve to the latest patch at build time (e.g., 10.11.8), which breaks users on older patch versions (e.g., 10.11.6) with `ReflectionTypeLoadException`. All plugin APIs used are stable across patch versions, so pinning to `.0` ensures maximum compatibility.
-- **CI manifest workaround**: The `stefanzweifel/git-auto-commit-action` step in the release workflow always fails due to branch protection rules. This is expected. The manual steps (download zip → md5sum → update manifest.json → push) are the permanent workflow.
+- **Catalog publish is decoupled from releases** (learned the hard way, issue #20): Pages used to be deployed *inside* the release job, which (a) regenerated a **single-entry** manifest that diverged from the committed full-history one, and (b) meant a transient `actions/deploy-pages` "Deployment failed, try again later" stranded the catalog on the previous version until the *next* release — v7.3.2.0 shipped as a release while the catalog kept advertising 7.3.1.0, so installers still saw `NotSupported`. Now `pages.yml` publishes the committed `manifest.json` on every manifest change (and on manual dispatch), so it is retryable and always matches the repo. Do NOT re-add Pages steps to `build.yml`. **Verify a release end-to-end at the CATALOG URL** (`https://geiserx.github.io/smart-covers/manifest.json`), not just the repo file — a green release run does not prove the catalog updated.
 - **Awesome-list PRs**: Open PRs exist at `awesome-jellyfin/awesome-jellyfin` and `quozd/awesome-dotnet` referencing this plugin. If the plugin is renamed again, those PRs need updating (branch content + PR title/body).
 - **Deploy path on production**: The Jellyfin instance runs on `watchtower` (Unraid). Plugin path: `/mnt/user/appdata/arr/jellyfin/config/plugins/SmartCovers_<version>/`. Old plugin folders may have FUSE hidden files while Jellyfin is running — restart first, then delete.
 - **SharpCompress access styles are mutually exclusive** (0.49.x): per-entry random access (`entry.OpenEntryStream()`) THROWS on solid RAR archives (`unpacked file size does not match header`), and the forward reader (`archive.ExtractAllEntries()`) THROWS on everything that is NOT solid/7z (`can only be used on solid archives or 7Zip archives`). Branch on `archive.IsSolid` — there is no single code path.
