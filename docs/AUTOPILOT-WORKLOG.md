@@ -162,3 +162,27 @@
   Bookshelf's own SharpCompress 0.38 coexists untouched. Reporter answered on #17 with the verified
   fix. (Side note: Jellyfin auto-tried deleting the superseded `SmartCovers_7.1.1.0` folder and hit
   "Directory not empty" — harmless known quirk; folder left in place pending Sergio's OK.)
+
+### Entry 8 — catalog stuck at 7.3.1.0 (Pages), fixed with a decoupled publish (2026-07-06)
+
+- **Second field report (issue #20 comment, bashman83):** catalog still shows 7.3.1.0 → still
+  NotSupported, days after v7.3.2.0 released.
+- **Root cause:** the release binary was correct, but the **GitHub Pages catalog** was deployed
+  *inside the release job*. On the 7.3.2.0 run `actions/deploy-pages` returned a transient
+  `"Deployment failed, try again later."` (confirmed in the run annotations). Pages only re-published
+  on a new tag, so there was no retry path — the catalog stayed frozen at the last good deploy
+  (7.3.1.0, `last-modified` 09:27 release day). The release job also regenerated a **single-entry**
+  manifest diverging from the committed full-history one. `build_type=workflow`, `main` is an allowed
+  deployment branch — config was fine; it was purely the un-retryable transient + the coupling.
+- **Fix (PR #22, `3b762c1` — CI/docs only, no plugin change):** new **`pages.yml`** publishes the
+  committed `manifest.json` to Pages on any push to `main` that changes it (+ `workflow_dispatch`) —
+  retryable and decoupled from releases. Removed the single-entry regeneration and all Pages steps
+  from `build.yml` (release job now only builds/tests/packages/releases; dropped its unused
+  pages/id-token perms). CodeRabbit: 1 nitpick (`persist-credentials: false` on the Pages checkout) —
+  applied; re-review clean; merged after all checks green.
+- **Verified at the CATALOG URL** (the lesson): `https://geiserx.github.io/smart-covers/manifest.json`
+  now serves **7.3.2.0** with full history (7.3.2.0→5.0.0.0), checksum `6f8de803…` matching the
+  release asset, `last-modified` = the fresh deploy. Reporter answered on #20 (incl. Jellyfin
+  manifest-cache refresh instructions). CLAUDE.md now documents the two-workflow model + "verify at
+  the catalog URL, not just the repo file."
+- **Tally:** 1 closed / 0 open.
