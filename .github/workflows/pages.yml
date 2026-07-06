@@ -1,0 +1,71 @@
+name: Publish catalog manifest to Pages
+
+# Publishes the committed manifest.json (the Jellyfin plugin catalog that users
+# add as a repository) to GitHub Pages. This is deliberately DECOUPLED from the
+# release workflow: the release job used to deploy Pages inline, so a transient
+# "Deployment failed, try again later" from actions/deploy-pages stranded the
+# catalog on the previous version until the *next* release (that is exactly how
+# v7.3.2.0 shipped as a release but the catalog kept advertising 7.3.1.0 →
+# NotSupported for installers). Here a manifest change — or a manual dispatch —
+# republishes on its own, and a transient failure just needs a re-run.
+on:
+  push:
+    branches: [main]
+    paths:
+      - manifest.json
+      - .github/workflows/pages.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never run two Pages deploys at once; let an in-flight one finish rather than
+# cancel it (a cancelled deploy can leave the site on a stale version).
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # This job only reads manifest.json and deploys Pages; it never pushes
+          # back, so don't leave the GITHUB_TOKEN git credential on disk.
+          persist-credentials: false
+
+      - name: Assemble site from the committed manifest
+        run: |
+          # The committed manifest.json (full version history) is the single
+          # source of truth for the catalog. Fail loudly if it is not valid JSON
+          # rather than publish a broken catalog.
+          python3 -c "import json; json.load(open('manifest.json'))"
+          mkdir -p _site
+          cp manifest.json _site/manifest.json
+          # Serve files verbatim (no Jekyll processing of the repo).
+          touch _site/.nojekyll
+          cat > _site/index.html << 'HTML'
+          <!doctype html>
+          <meta charset="utf-8">
+          <title>SmartCovers — Jellyfin plugin catalog</title>
+          <p>This is the SmartCovers plugin repository manifest for Jellyfin.</p>
+          <p>Add this URL under <strong>Dashboard → Plugins → Repositories</strong>:
+          <code>https://geiserx.github.io/smart-covers/manifest.json</code></p>
+          <p>Project: <a href="https://github.com/GeiserX/smart-covers">github.com/GeiserX/smart-covers</a></p>
+          HTML
+
+      - uses: actions/configure-pages@v6
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

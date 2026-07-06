@@ -9,8 +9,6 @@ on:
 
 permissions:
   contents: write
-  pages: write
-  id-token: write
 
 jobs:
   check-version:
@@ -174,41 +172,13 @@ jobs:
           cd release && zip -r ../smart-covers_${{ steps.version.outputs.version }}.zip .
 
       - name: Calculate checksum
-        id: checksum
         run: |
+          # Printed for the manual manifest.json update after release — the
+          # catalog manifest is the committed manifest.json, published to Pages
+          # by pages.yml (NOT regenerated here). See CLAUDE.md "Release process".
           CHECKSUM=$(md5sum smart-covers_${{ steps.version.outputs.version }}.zip | cut -d ' ' -f 1)
-          echo "checksum=$CHECKSUM" >> $GITHUB_OUTPUT
-
-      - name: Update manifest.json
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          CHECKSUM="${{ steps.checksum.outputs.checksum }}"
-          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
-          cat > manifest.json << EOF
-          [
-            {
-              "guid": "82eef869-3f18-4678-968d-06efc10b60cf",
-              "name": "SmartCovers",
-              "overview": "Cover extraction for books, audiobooks, comics, and music — with online fallback via Open Library & Google Books.",
-              "description": "Cover provider for Jellyfin libraries. Renders PDF first pages via built-in PDFium (no external tools needed), searches EPUB archives for cover images, extracts the first page from CBZ/CBR comic archives, and extracts embedded artwork from audio files via ffmpeg. When local extraction fails, automatically fetches covers from Open Library and Google Books as a last resort.",
-              "owner": "GeiserX",
-              "category": "General",
-              "versions": [
-                {
-                  "version": "${VERSION}",
-                  "changelog": "See https://github.com/GeiserX/smart-covers/releases",
-                  "targetAbi": "10.11.0.0",
-                  "sourceUrl": "https://github.com/GeiserX/smart-covers/releases/download/v${VERSION}/smart-covers_${VERSION}.zip",
-                  "checksum": "${CHECKSUM}",
-                  "timestamp": "${TIMESTAMP}"
-                }
-              ]
-            }
-          ]
-          EOF
-          python3 -c "import json; json.load(open('manifest.json'))"
-          echo "manifest.json is valid JSON"
+          echo "MD5 of smart-covers_${{ steps.version.outputs.version }}.zip: \`$CHECKSUM\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "MD5 of smart-covers_${{ steps.version.outputs.version }}.zip: $CHECKSUM"
 
       - name: Create GitHub Release
         if: github.event_name != 'pull_request'
@@ -220,18 +190,3 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Setup Pages
-        if: github.event_name != 'pull_request'
-        uses: actions/configure-pages@v6
-
-      - name: Upload Pages artifact
-        if: github.event_name != 'pull_request'
-        uses: actions/upload-pages-artifact@v5
-        with:
-          path: .
-
-      - name: Deploy to GitHub Pages
-        if: github.event_name != 'pull_request'
-        id: deployment
-        uses: actions/deploy-pages@v5
