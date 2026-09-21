@@ -47,6 +47,22 @@ public class OnlineCoverFetcher
         @"\s{2,}",
         RegexOptions.Compiled);
 
+    // A leading bracket tag that only says what the file is: "[Audiolibro mp3] Title".
+    private static readonly Regex BracketFormatPrefixRegex = new(
+        @"^\s*\[[^\]]*(?:mp3|m4a|m4b|flac|audiolibro|audiobook)[^\]]*\]\s*[-–—]?\s*",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    // A publication year hanging off the end of an author: "Ken Follett 1989".
+    // Only ever applied to the author — a title may legitimately end in a year.
+    private static readonly Regex TrailingBareYearRegex = new(
+        @"\s+(?:19|20)\d{2}\s*$",
+        RegexOptions.Compiled);
+
+    // An extension that leaked into the item name: "Crossing the Chasm.m4b".
+    private static readonly Regex MediaExtensionSuffixRegex = new(
+        @"\.(?:mp3|m4a|m4b|flac|ogg|opus|wma|aac|wav|epub|pdf|mobi|azw3?|prc|cbz|cbr)\s*$",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     private readonly ILogger<OnlineCoverFetcher> _logger;
     private readonly HttpClient _http;
 
@@ -109,6 +125,9 @@ public class OnlineCoverFetcher
 
         // Extract author from "(year, author)" pattern before cleaning removes it.
         // e.g. "A solas (2019, Silvia Congost)" → author = "Silvia Congost"
+        raw = MediaExtensionSuffixRegex.Replace(raw, string.Empty);
+        raw = BracketFormatPrefixRegex.Replace(raw, string.Empty);
+
         string? parenAuthor = null;
         var yearAuthorMatch = ParenYearAuthorRegex.Match(raw);
         if (yearAuthorMatch.Success)
@@ -116,6 +135,24 @@ public class OnlineCoverFetcher
             parenAuthor = yearAuthorMatch.Groups[2].Value.Trim();
             // Remove the full match so CleanText doesn't choke on the remnant
             raw = raw.Remove(yearAuthorMatch.Index, yearAuthorMatch.Length);
+        }
+
+        // "<Title> (mp3) <Author> <Year>" is how most of these folders are named, and
+        // the format tag marks the boundary: title before it, author after it. Doing
+        // this first stops the whole name collapsing into one unsearchable string.
+        var formatTag = FormatTagRegex.Match(raw);
+        if (formatTag.Success && formatTag.Index > 2)
+        {
+            var beforeTag = CleanText(raw[..formatTag.Index]);
+            var afterTag = CleanText(raw[(formatTag.Index + formatTag.Length)..])
+                .TrimStart(' ', '-', '–', '—')
+                .Trim();
+            afterTag = TrailingBareYearRegex.Replace(afterTag, string.Empty).Trim();
+
+            if (IsSearchableTitle(beforeTag))
+            {
+                return (beforeTag, string.IsNullOrWhiteSpace(afterTag) ? null : afterTag);
+            }
         }
 
         var cleaned = CleanText(raw);
@@ -128,8 +165,8 @@ public class OnlineCoverFetcher
             var title = cleaned[..dashIdx].Trim();
             var author = cleaned[(dashIdx + 3)..].Trim();
 
-            // Also clean the author part (might still have tags)
-            author = CleanText(author);
+            // Also clean the author part (might still have tags, or a year)
+            author = TrailingBareYearRegex.Replace(CleanText(author), string.Empty).Trim();
 
             if (!string.IsNullOrEmpty(title) && !string.IsNullOrEmpty(author))
             {
@@ -238,9 +275,72 @@ public class OnlineCoverFetcher
             {
                 return result;
             }
+
+            // Plenty of folders are named "<Author> - <Title>", and nothing in the
+            // name says which half is which. Rather than guess, try it the other
+            // way round once the first reading has come up empty.
+            if (IsSearchableTitle(author))
+            {
+                result = await TryOpenLibraryAsync(author, title, cancellationToken).ConfigureAwait(false);
+                if (result != null)
+                {
+                    return result;
+                }
+
+                result = await TryGoogleBooksAsync(author, title, cancellationToken).ConfigureAwait(false);
+                if (result != null)
+                {
+                    return result;
+                }
+            }
+        }
+
+        // Last try: the main title without its subtitle. Catalogues index
+        // "Four Thousand Weeks", not "Four Thousand Weeks: Time Management for
+        // Mortals". Guarded to multi-word main titles — a one-word one like
+        // "Build" matches tens of thousands of books and would fetch a stranger.
+        var mainTitle = MainTitleOf(title);
+        if (mainTitle != null)
+        {
+            result = await TryOpenLibraryAsync(mainTitle, author, cancellationToken).ConfigureAwait(false);
+            if (result != null)
+            {
+                return result;
+            }
+
+            result = await TryGoogleBooksAsync(mainTitle, author, cancellationToken).ConfigureAwait(false);
+            if (result != null)
+            {
+                return result;
+            }
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// The part of a title before its first colon, when that is a title in its own
+    /// right: at least two words, and different from what was already searched.
+    /// Returns null when there is no useful subtitle to drop.
+    /// </summary>
+    internal static string? MainTitleOf(string title)
+    {
+        var colon = title.IndexOf(':', StringComparison.Ordinal);
+        if (colon <= 0)
+        {
+            return null;
+        }
+
+        var main = title[..colon].Trim();
+
+        if (main.Length == title.Trim().Length
+            || !IsSearchableTitle(main)
+            || main.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length < 2)
+        {
+            return null;
+        }
+
+        return main;
     }
 
     /// <summary>

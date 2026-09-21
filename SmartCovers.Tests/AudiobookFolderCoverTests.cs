@@ -334,15 +334,24 @@ public class AudiobookFolderCoverTests : IDisposable
         handler.AddJsonResponse("googleapis.com/books", new { totalItems = 0 });
 
         var provider = Provider(handler);
+        var afterFirstTrack = -1;
 
         foreach (var track in tracks)
         {
             var result = await provider.GetImage(
                 Track(track, "Pista  1").Object, ImageType.Primary, CancellationToken.None);
             Assert.False(result.HasImage);
-        }
 
-        Assert.Equal(1, handler.RequestedUrls.Count(u => u.Contains("search.json", StringComparison.Ordinal)));
+            var searches = handler.RequestedUrls.Count(u => u.Contains("search.json", StringComparison.Ordinal));
+            if (afterFirstTrack < 0)
+            {
+                afterFirstTrack = searches;
+                Assert.True(afterFirstTrack > 0, "the first track should actually look the book up");
+            }
+
+            // Every track after the first must cost nothing.
+            Assert.Equal(afterFirstTrack, searches);
+        }
     }
 
     [Theory]
