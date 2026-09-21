@@ -88,9 +88,15 @@ public class OnlineCoverFetcher
     /// Handles common audiobook filename patterns like format tags, year suffixes,
     /// series indicators, and "Title - Author" splitting.
     /// </summary>
-    internal static (string Title, string? Author) ParseBookInfo(BaseItem item)
+    /// <param name="item">The item being given a cover.</param>
+    /// <param name="identityName">
+    /// The book folder's name, when the item is one track of a folder audiobook.
+    /// A track is named "01" or "Pista 1", which identifies nothing — the book's
+    /// name is on the folder, so it wins over the item's own name when supplied.
+    /// </param>
+    internal static (string Title, string? Author) ParseBookInfo(BaseItem item, string? identityName = null)
     {
-        var raw = item.Name;
+        var raw = !string.IsNullOrWhiteSpace(identityName) ? identityName : item.Name;
         if (string.IsNullOrWhiteSpace(raw))
         {
             raw = Path.GetFileNameWithoutExtension(item.Path);
@@ -179,13 +185,29 @@ public class OnlineCoverFetcher
     }
 
     /// <summary>
+    /// Whether a title is worth searching a book catalogue for. A bare track number
+    /// is not: searching Open Library for "2" returns half a million books and the
+    /// plugin would ship the cover of whichever one came back first.
+    /// </summary>
+    internal static bool IsSearchableTitle(string? title)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            return false;
+        }
+
+        title = title.Trim();
+        return title.Length >= 3 && title.Any(char.IsLetter);
+    }
+
+    /// <summary>
     /// Attempts to fetch a cover image from online sources.
     /// Tries Open Library first, then Google Books as a fallback.
     /// </summary>
     public async Task<(MemoryStream Stream, ImageFormat Format)?> FetchCoverAsync(
         string title, string? author, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(title))
+        if (!IsSearchableTitle(title))
         {
             return null;
         }

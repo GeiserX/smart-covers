@@ -44,6 +44,15 @@ public class CoverImageProvider : IDynamicImageProvider
         ".cbz", ".cbr"
     };
 
+    private static readonly HashSet<string> MobiExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".mobi", ".azw", ".azw3", ".prc"
+    };
+
+    // Image names that mark a file as the cover wherever it appears in the name,
+    // so "CoverArt.jpg" and "Make Time-Cover.jpg" are found as well as "cover.jpg".
+    private static readonly string[] CoverNameHints = ["cover", "portada", "front", "poster", "folder"];
+
     // Comic candidates are limited to formats DetectImageFormat can verify: an
     // extension it can never validate (.tif/.tiff) would only waste candidate
     // attempts and can never ship as a cover anyway. (The EPUB path keeps the
@@ -72,8 +81,18 @@ public class CoverImageProvider : IDynamicImageProvider
     private const int PdfStateUnavailable = 1;
     private const int PdfStateAvailable = 2;
 
+    // Every track of a folder audiobook asks for the same book's cover. Without a
+    // cache a 100-track rip runs 100 identical online lookups (and 100 ffmpeg
+    // probes). A handful of entries is enough: a scan walks a book's tracks
+    // together. Negative results are cached too — those are the expensive ones.
+    private const int MaxCachedFolders = 4;
+    private const int MaxCachedCoverBytes = 4 * 1024 * 1024;
+
     private readonly ILogger<CoverImageProvider> _logger;
     private readonly OnlineCoverFetcher _onlineFetcher;
+    private readonly object _folderCoverLock = new();
+    private readonly Dictionary<string, CachedCover> _folderCovers = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Queue<string> _folderCoverOrder = new();
     private readonly object _pdfProbeLock = new();
     private readonly Func<bool> _pdfiumNativeProbe;
     private volatile int _pdfRenderingState;
@@ -119,7 +138,16 @@ public class CoverImageProvider : IDynamicImageProvider
     public string Name => "SmartCovers";
 
     /// <inheritdoc />
-    public bool Supports(BaseItem item) => item is Book || item is AudioBook || item is Audio || item is MusicAlbum;
+    /// <remarks>
+    /// Folders are included because a multi-file audiobook IS a folder in Jellyfin —
+    /// the tracks are separate items and the folder is what the library grid shows.
+    /// Library roots are excluded here, and <see cref="GetImage"/> refuses any folder
+    /// that holds more than one book, so a shelf never gets a guessed cover.
+    /// </remarks>
+    public bool Supports(BaseItem item) =>
+        item is Book || item is AudioBook || item is Audio || item is MusicAlbum
+        || (item is Folder && item is not CollectionFolder && item is not UserRootFolder
+            && item is not AggregateFolder);
 
     /// <inheritdoc />
     public IEnumerable<ImageType> GetSupportedImages(BaseItem item)
@@ -134,54 +162,243 @@ public class CoverImageProvider : IDynamicImageProvider
 
         if (string.IsNullOrEmpty(path))
         {
-            return await GetOnlineCover(item, cancellationToken).ConfigureAwait(false);
+            return await GetOnlineCover(item, null, cancellationToken).ConfigureAwait(false);
+        }
+
+        var isDirectory = Directory.Exists(path);
+
+        // A folder audiobook's identity is its folder name, never the track name
+        // ("01", "Pista 1"). For a disc folder ("CD 3", "<title> CD 3") it is the
+        // folder above. Null means the item has no single book folder.
+        var identityDir = BookIdentity.ResolveIdentityDirectory(
+            isDirectory ? path : Path.GetDirectoryName(path),
+            GetLibraryRootPath(item));
+
+        if (isDirectory)
+        {
+            // A folder holding more than one book — a library root, an author shelf —
+            // gets nothing. Guessing one cover for a shelf is worse than a blank tile.
+            if (identityDir == null)
+            {
+                _logger.LogDebug("Not a single-book folder, skipping: {Path}", path);
+                return new DynamicImageResponse { HasImage = false };
+            }
+
+            return await GetBookFolderCover(identityDir, item, cancellationToken).ConfigureAwait(false);
         }
 
         DynamicImageResponse result;
+        var ext = Path.GetExtension(path);
+        var isTrack = AudioExtensions.Contains(ext);
 
-        if (Directory.Exists(path))
+        if (string.Equals(ext, ".epub", StringComparison.OrdinalIgnoreCase))
         {
-            result = await GetFolderAudioCover(path, cancellationToken).ConfigureAwait(false);
+            result = await GetEpubCover(path, cancellationToken).ConfigureAwait(false);
+        }
+        else if (ComicExtensions.Contains(ext))
+        {
+            result = await GetComicCover(path, cancellationToken).ConfigureAwait(false);
+        }
+        else if (string.Equals(ext, ".pdf", StringComparison.OrdinalIgnoreCase))
+        {
+            result = await GetPdfCover(path, cancellationToken).ConfigureAwait(false);
+        }
+        else if (MobiExtensions.Contains(ext))
+        {
+            result = await GetMobiCover(path, cancellationToken).ConfigureAwait(false);
+        }
+        else if (isTrack)
+        {
+            result = await GetAudioCover(path, cancellationToken).ConfigureAwait(false);
+            if (!result.HasImage)
+            {
+                result = await GetSidecarImage(path, cancellationToken).ConfigureAwait(false);
+            }
         }
         else
         {
-            var ext = Path.GetExtension(path);
-
-            if (string.Equals(ext, ".epub", StringComparison.OrdinalIgnoreCase))
-            {
-                result = await GetEpubCover(path, cancellationToken).ConfigureAwait(false);
-            }
-            else if (ComicExtensions.Contains(ext))
-            {
-                result = await GetComicCover(path, cancellationToken).ConfigureAwait(false);
-            }
-            else if (string.Equals(ext, ".pdf", StringComparison.OrdinalIgnoreCase))
-            {
-                result = await GetPdfCover(path, cancellationToken).ConfigureAwait(false);
-            }
-            else if (AudioExtensions.Contains(ext))
-            {
-                result = await GetAudioCover(path, cancellationToken).ConfigureAwait(false);
-                if (!result.HasImage)
-                {
-                    result = await GetSidecarImage(path, cancellationToken).ConfigureAwait(false);
-                }
-            }
-            else
-            {
-                result = new DynamicImageResponse { HasImage = false };
-            }
+            result = new DynamicImageResponse { HasImage = false };
         }
 
-        // Final fallback: fetch cover from online sources (books/audiobooks only).
-        // Online fetcher queries Open Library and Google Books — irrelevant for music.
-        if (!result.HasImage && item is not Audio && item is not MusicAlbum)
+        if (result.HasImage)
         {
-            result = await GetOnlineCover(item, cancellationToken).ConfigureAwait(false);
+            return result;
+        }
+
+        // A track with no art of its own takes the book's cover. Only tracks: a PDF
+        // or a .cbr IS its own book, and a folder can hold many of those.
+        if (isTrack && identityDir != null && IsBookLike(item))
+        {
+            return await GetBookFolderCover(identityDir, item, cancellationToken).ConfigureAwait(false);
+        }
+
+        // Final fallback: fetch the cover from online sources. Books and audiobooks
+        // only — Open Library and Google Books are irrelevant for music.
+        if (IsBookLike(item))
+        {
+            return await GetOnlineCover(item, null, cancellationToken).ConfigureAwait(false);
         }
 
         return result;
     }
+
+    /// <summary>
+    /// True for the item types an online book catalogue can answer for. Note that
+    /// <see cref="AudioBook"/> derives from <see cref="Audio"/>, so an "is not Audio"
+    /// test would silently exclude every audiobook.
+    /// </summary>
+    private static bool IsBookLike(BaseItem item)
+        => item is Book || item is AudioBook || (item is Folder && item is not MusicAlbum);
+
+    /// <summary>
+    /// The library root this item belongs to, used as a hard ceiling on folder
+    /// climbing. Returns null when the item graph is not available (the library
+    /// manager is not wired up), in which case only the structural rules apply.
+    /// </summary>
+    private string? GetLibraryRootPath(BaseItem item)
+    {
+        try
+        {
+            return item.GetTopParent()?.Path;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogDebug(ex, "Could not resolve the library root for {Path}", item.Path);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// The cover for one book folder: images on disk first, then online. Cached, so
+    /// the other ninety-nine tracks of the same book cost nothing.
+    /// </summary>
+    private async Task<DynamicImageResponse> GetBookFolderCover(
+        string identityDir, BaseItem item, CancellationToken cancellationToken)
+    {
+        if (TryGetCachedCover(identityDir, out var cached))
+        {
+            return cached;
+        }
+
+        var result = await GetFolderAudioCover(identityDir, cancellationToken).ConfigureAwait(false);
+
+        // Only ask online for a folder that IS one book. A folder holding a stack of
+        // PDFs or comics gets whatever image is already on disk and nothing more —
+        // each of those files is its own book and carries its own cover.
+        if (!result.HasImage && IsBookLike(item) && RepresentsOneBook(identityDir))
+        {
+            result = await GetOnlineCover(item, identityDir, cancellationToken).ConfigureAwait(false);
+        }
+
+        return StoreCover(identityDir, result);
+    }
+
+    /// <summary>
+    /// True when the folder stands for a single book: it holds this book's audio
+    /// tracks (directly or in disc subfolders), or it holds no more than one
+    /// self-contained book file. A shelf of PDFs or comics is not one book, and
+    /// giving it a looked-up cover would be a guess.
+    /// </summary>
+    private static bool RepresentsOneBook(string dir)
+    {
+        try
+        {
+            if (Directory.EnumerateFiles(dir).Any(f => AudioExtensions.Contains(Path.GetExtension(f))))
+            {
+                return true;
+            }
+
+            var hasDiscAudio = Directory.EnumerateDirectories(dir)
+                .Where(sub => BookIdentity.IsDiscFolderName(Path.GetFileName(sub)))
+                .Any(sub => Directory.EnumerateFiles(sub)
+                    .Any(f => AudioExtensions.Contains(Path.GetExtension(f))));
+
+            if (hasDiscAudio)
+            {
+                return true;
+            }
+
+            return Directory.EnumerateFiles(dir)
+                .Count(f => IsSelfContainedBookFile(Path.GetExtension(f))) <= 1;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// True for file types that are a whole book on their own.
+    /// </summary>
+    private static bool IsSelfContainedBookFile(string extension)
+        => ComicExtensions.Contains(extension)
+            || MobiExtensions.Contains(extension)
+            || string.Equals(extension, ".pdf", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(extension, ".epub", StringComparison.OrdinalIgnoreCase);
+
+    private bool TryGetCachedCover(string identityDir, out DynamicImageResponse response)
+    {
+        lock (_folderCoverLock)
+        {
+            if (_folderCovers.TryGetValue(identityDir, out var entry))
+            {
+                response = entry.Data == null
+                    ? new DynamicImageResponse { HasImage = false }
+                    : new DynamicImageResponse
+                    {
+                        HasImage = true,
+                        Stream = new MemoryStream(entry.Data, writable: false),
+                        Format = entry.Format
+                    };
+                return true;
+            }
+        }
+
+        response = new DynamicImageResponse { HasImage = false };
+        return false;
+    }
+
+    /// <summary>
+    /// Caches the folder's outcome and returns an equivalent response. The caller's
+    /// stream is consumed, so a fresh one is handed back.
+    /// </summary>
+    private DynamicImageResponse StoreCover(string identityDir, DynamicImageResponse result)
+    {
+        byte[]? data = null;
+
+        if (result.HasImage && result.Stream is MemoryStream ms && ms.Length <= MaxCachedCoverBytes)
+        {
+            data = ms.ToArray();
+            ms.Dispose();
+            result = new DynamicImageResponse
+            {
+                HasImage = true,
+                Stream = new MemoryStream(data, writable: false),
+                Format = result.Format
+            };
+        }
+        else if (result.HasImage)
+        {
+            // Too big (or not a MemoryStream) to cache — hand it straight through.
+            return result;
+        }
+
+        lock (_folderCoverLock)
+        {
+            if (_folderCovers.TryAdd(identityDir, new CachedCover(data, result.Format)))
+            {
+                _folderCoverOrder.Enqueue(identityDir);
+                while (_folderCoverOrder.Count > MaxCachedFolders)
+                {
+                    _folderCovers.Remove(_folderCoverOrder.Dequeue());
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private readonly record struct CachedCover(byte[]? Data, ImageFormat Format);
 
     private async Task<DynamicImageResponse> GetEpubCover(string path, CancellationToken cancellationToken)
     {
@@ -900,48 +1117,21 @@ public class CoverImageProvider : IDynamicImageProvider
     }
 
     /// <summary>
-    /// For folder-based audiobooks (multi-file chapters), extracts embedded
-    /// art from the first audio file in the directory.
+    /// The cover for a book folder: an image file sitting in it, else embedded art
+    /// from its first audio file (looking inside disc subfolders when the book is a
+    /// multi-disc rip and the folder itself holds no audio).
     /// </summary>
     private async Task<DynamicImageResponse> GetFolderAudioCover(string dirPath, CancellationToken cancellationToken)
     {
         try
         {
-            // First check for cover/folder images in the directory
-            string[] imageExtensions = [".jpg", ".jpeg", ".png", ".webp"];
-            string[] coverNames = ["cover", "folder", "front", "poster", "thumb"];
-
-            foreach (var name in coverNames)
+            var image = await GetFolderImageFile(dirPath, cancellationToken).ConfigureAwait(false);
+            if (image.HasImage)
             {
-                foreach (var ext in imageExtensions)
-                {
-                    var candidate = Path.Combine(dirPath, name + ext);
-                    if (File.Exists(candidate))
-                    {
-                        var bytes = await File.ReadAllBytesAsync(candidate, cancellationToken).ConfigureAwait(false);
-                        if (bytes.Length >= 1000)
-                        {
-                            var (format, offset) = DetectImageFormat(bytes);
-                            if (format != null)
-                            {
-                                _logger.LogDebug("Found folder cover image {File}", candidate);
-                                var imageStream = offset > 0
-                                    ? new MemoryStream(bytes, offset, bytes.Length - offset)
-                                    : new MemoryStream(bytes);
-                                return new DynamicImageResponse { HasImage = true, Stream = imageStream, Format = format.Value };
-                            }
-                        }
-                    }
-                }
+                return image;
             }
 
-            // Then try extracting embedded art from the first audio file
-            var audioFile = Directory.EnumerateFiles(dirPath)
-                .Where(f => AudioExtensions.Contains(Path.GetExtension(f)))
-                .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
-                .FirstOrDefault();
-
-            if (audioFile != null)
+            foreach (var audioFile in EnumerateBookAudioFiles(dirPath))
             {
                 var result = await GetAudioCover(audioFile, cancellationToken).ConfigureAwait(false);
                 if (result.HasImage)
@@ -949,19 +1139,180 @@ public class CoverImageProvider : IDynamicImageProvider
                     return result;
                 }
 
-                // Final fallback: sidecar image next to the audio file
-                return await GetSidecarImage(audioFile, cancellationToken).ConfigureAwait(false);
+                result = await GetSidecarImage(audioFile, cancellationToken).ConfigureAwait(false);
+                if (result.HasImage)
+                {
+                    return result;
+                }
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogWarning(ex, "Failed to scan folder for audio files: {Path}", dirPath);
+            _logger.LogWarning(ex, "Failed to scan folder for a cover: {Path}", dirPath);
         }
 
         return new DynamicImageResponse { HasImage = false };
     }
 
-    private async Task<DynamicImageResponse> GetOnlineCover(BaseItem item, CancellationToken cancellationToken)
+    /// <summary>
+    /// The first audio file of the book: the folder's own, else the first disc
+    /// subfolder's. Only one candidate per location — probing every track of a
+    /// 100-file rip would cost a hundred ffmpeg runs for one cover.
+    /// </summary>
+    private static IEnumerable<string> EnumerateBookAudioFiles(string dirPath)
+    {
+        var own = FirstAudioFile(dirPath);
+        if (own != null)
+        {
+            yield return own;
+            yield break;
+        }
+
+        var firstDisc = Directory.EnumerateDirectories(dirPath)
+            .Where(sub => BookIdentity.IsDiscFolderName(Path.GetFileName(sub)))
+            .OrderBy(sub => sub, NaturalStringComparer.Instance)
+            .FirstOrDefault();
+
+        var discAudio = firstDisc == null ? null : FirstAudioFile(firstDisc);
+        if (discAudio != null)
+        {
+            yield return discAudio;
+        }
+    }
+
+    private static string? FirstAudioFile(string dirPath)
+        => Directory.EnumerateFiles(dirPath)
+            .Where(f => AudioExtensions.Contains(Path.GetExtension(f)))
+            .OrderBy(f => f, NaturalStringComparer.Instance)
+            .FirstOrDefault();
+
+    /// <summary>
+    /// Finds a cover image file in the folder. An exact "cover.jpg" wins; then any
+    /// image whose name contains a cover word ("CoverArt.jpg", "Make Time-Cover.jpg");
+    /// then, when the folder holds exactly one image, that image — a lone picture
+    /// beside a book's audio is its cover.
+    /// </summary>
+    private async Task<DynamicImageResponse> GetFolderImageFile(string dirPath, CancellationToken cancellationToken)
+    {
+        var noImage = new DynamicImageResponse { HasImage = false };
+
+        var images = Directory.EnumerateFiles(dirPath)
+            .Where(f => ImageExtensions.Contains(Path.GetExtension(f)))
+            .OrderBy(f => f, NaturalStringComparer.Instance)
+            .ToList();
+
+        if (images.Count == 0)
+        {
+            return noImage;
+        }
+
+        var exact = images.FirstOrDefault(
+            f => CoverFileNames.Contains(Path.GetFileNameWithoutExtension(f)));
+
+        var byHint = images.FirstOrDefault(
+            f => CoverNameHints.Any(h => Path.GetFileNameWithoutExtension(f)
+                .Contains(h, StringComparison.OrdinalIgnoreCase)));
+
+        var lone = images.Count == 1 ? images[0] : null;
+
+        foreach (var candidate in new[] { exact, byHint, lone })
+        {
+            if (candidate == null)
+            {
+                continue;
+            }
+
+            var loaded = await LoadImageFile(candidate, cancellationToken).ConfigureAwait(false);
+            if (loaded.HasImage)
+            {
+                _logger.LogDebug("Found folder cover image {File}", candidate);
+                return loaded;
+            }
+        }
+
+        return noImage;
+    }
+
+    /// <summary>
+    /// Reads an image file, rejecting placeholders and anything whose magic bytes
+    /// do not match a format Jellyfin can display.
+    /// </summary>
+    private static async Task<DynamicImageResponse> LoadImageFile(string path, CancellationToken cancellationToken)
+    {
+        var bytes = await File.ReadAllBytesAsync(path, cancellationToken).ConfigureAwait(false);
+        if (bytes.Length < 1000)
+        {
+            return new DynamicImageResponse { HasImage = false };
+        }
+
+        var (format, offset) = DetectImageFormat(bytes);
+        if (format == null)
+        {
+            return new DynamicImageResponse { HasImage = false };
+        }
+
+        return new DynamicImageResponse
+        {
+            HasImage = true,
+            Stream = offset > 0 ? new MemoryStream(bytes, offset, bytes.Length - offset) : new MemoryStream(bytes),
+            Format = format.Value
+        };
+    }
+
+    /// <summary>
+    /// Reads the cover embedded in a MOBI / AZW e-book. Jellyfin's built-in providers
+    /// do not open these, so without this the file has no local cover at all.
+    /// </summary>
+    private async Task<DynamicImageResponse> GetMobiCover(string path, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var bytes = await Task.Run(
+                () =>
+                {
+                    using var stream = File.OpenRead(path);
+                    return MobiCoverExtractor.TryExtractCover(stream);
+                },
+                cancellationToken).ConfigureAwait(false);
+
+            if (bytes == null)
+            {
+                _logger.LogDebug("No embedded cover in MOBI {Path}", path);
+                return new DynamicImageResponse { HasImage = false };
+            }
+
+            var (format, offset) = DetectImageFormat(bytes);
+            if (format == null)
+            {
+                return new DynamicImageResponse { HasImage = false };
+            }
+
+            _logger.LogDebug("Extracted MOBI cover ({Size} bytes) from {Path}", bytes.Length, path);
+
+            return new DynamicImageResponse
+            {
+                HasImage = true,
+                Stream = offset > 0 ? new MemoryStream(bytes, offset, bytes.Length - offset) : new MemoryStream(bytes),
+                Format = format.Value
+            };
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Failed to read MOBI cover from {Path}", path);
+            return new DynamicImageResponse { HasImage = false };
+        }
+    }
+
+    /// <summary>
+    /// Last resort: ask an online book catalogue for the cover.
+    /// </summary>
+    /// <param name="item">The item being given a cover.</param>
+    /// <param name="identityDir">
+    /// The book folder to take the title from, or null to use the item's own name.
+    /// </param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    private async Task<DynamicImageResponse> GetOnlineCover(
+        BaseItem item, string? identityDir, CancellationToken cancellationToken)
     {
         var config = Plugin.Instance?.Configuration;
         if (config?.EnableOnlineCoverFetch != true)
@@ -971,9 +1322,12 @@ public class CoverImageProvider : IDynamicImageProvider
 
         try
         {
-            var (title, author) = OnlineCoverFetcher.ParseBookInfo(item);
-            if (string.IsNullOrWhiteSpace(title))
+            var (title, author) = OnlineCoverFetcher.ParseBookInfo(
+                item, identityDir == null ? null : Path.GetFileName(identityDir));
+
+            if (!OnlineCoverFetcher.IsSearchableTitle(title))
             {
+                _logger.LogDebug("Skipping online lookup, '{Title}' is not a usable title", title);
                 return new DynamicImageResponse { HasImage = false };
             }
 
