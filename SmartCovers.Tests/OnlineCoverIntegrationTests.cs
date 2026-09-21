@@ -324,8 +324,9 @@ public class OnlineCoverIntegrationTests : IDisposable
 
         var provider = CreateProviderWithMockHttp(handler);
 
-        // AudioBook extends Audio, so online fallback is skipped.
-        // Use Book with a directory path to test folder scan -> online fallback.
+        // A Book whose path is a directory: folder scan finds nothing on disk, so
+        // the online fallback answers. (AudioBook also reaches it now — see
+        // AudiobookFolderCoverTests.)
         var bookDir = Path.Combine(_tmpDir, "book-folder");
         Directory.CreateDirectory(bookDir);
 
