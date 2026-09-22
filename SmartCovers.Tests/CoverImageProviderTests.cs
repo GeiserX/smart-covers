@@ -83,7 +83,7 @@ public class CoverImageProviderTests
         // check returns early (avoids real HTTP calls from Plugin.Instance config).
         var provider = CreateProvider();
         var item = new Mock<Audio>();
-        item.SetupGet(i => i.Path).Returns((string?)null);
+        item.SetupGet(i => i.Path).Returns((string)null!);
         item.SetupGet(i => i.Name).Returns(string.Empty);
 
         var result = await provider.GetImage(item.Object, ImageType.Primary, CancellationToken.None);

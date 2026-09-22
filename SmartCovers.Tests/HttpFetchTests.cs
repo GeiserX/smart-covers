@@ -371,7 +371,6 @@ public class HttpFetchTests
 
         // First 2 tries (OL + Google with author) return nothing
         // Then retries without author succeed on Open Library
-        var callCount = 0;
         // All OL calls return no cover initially, but the 3rd call (without author) returns a cover
         handler.AddJsonResponse("openlibrary.org/search.json", new
         {
@@ -527,7 +526,7 @@ public class HttpFetchTests
         Assert.NotNull(result);
 
         var olUrls = handler.RequestedUrls.Where(u => u.Contains("openlibrary.org/search")).ToList();
-        Assert.True(olUrls.Any(u => u.Contains("author=")));
+        Assert.Contains(olUrls, u => u.Contains("author="));
 
         result!.Value.Stream.Dispose();
     }
@@ -584,7 +583,7 @@ public class HttpFetchTests
         Assert.NotNull(result);
 
         var googleUrls = handler.RequestedUrls.Where(u => u.Contains("googleapis.com/books")).ToList();
-        Assert.True(googleUrls.Any(u => u.Contains("inauthor%3A") || u.Contains("inauthor:")));
+        Assert.Contains(googleUrls, u => u.Contains("inauthor%3A") || u.Contains("inauthor:"));
 
         result!.Value.Stream.Dispose();
     }

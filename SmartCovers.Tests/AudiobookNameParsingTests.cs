@@ -14,7 +14,7 @@ public class AudiobookNameParsingTests
     {
         var mock = new Mock<BaseItem>();
         mock.SetupGet(m => m.Name).Returns(name);
-        mock.SetupGet(m => m.Path).Returns((string?)null);
+        mock.SetupGet(m => m.Path).Returns((string)null!);
         return mock.Object;
     }
 

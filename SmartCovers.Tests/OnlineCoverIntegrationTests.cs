@@ -93,7 +93,7 @@ public class OnlineCoverIntegrationTests : IDisposable
         var provider = CreateProviderWithMockHttp(handler);
 
         var item = new Mock<Book>();
-        item.SetupGet(i => i.Path).Returns((string?)null);
+        item.SetupGet(i => i.Path).Returns((string)null!);
         item.SetupGet(i => i.Name).Returns("Great Book");
 
         var result = await provider.GetImage(item.Object, ImageType.Primary, CancellationToken.None);
@@ -184,7 +184,7 @@ public class OnlineCoverIntegrationTests : IDisposable
         var provider = CreateProviderWithMockHttp(handler);
 
         var item = new Mock<Book>();
-        item.SetupGet(i => i.Path).Returns((string?)null);
+        item.SetupGet(i => i.Path).Returns((string)null!);
         item.SetupGet(i => i.Name).Returns("Nonexistent Book");
 
         var result = await provider.GetImage(item.Object, ImageType.Primary, CancellationToken.None);
@@ -229,7 +229,7 @@ public class OnlineCoverIntegrationTests : IDisposable
         var provider = CreateProviderWithMockHttp(handler);
 
         var item = new Mock<Book>();
-        item.SetupGet(i => i.Path).Returns((string?)null);
+        item.SetupGet(i => i.Path).Returns((string)null!);
         item.SetupGet(i => i.Name).Returns("Error Book");
 
         var result = await provider.GetImage(item.Object, ImageType.Primary, CancellationToken.None);
@@ -243,7 +243,7 @@ public class OnlineCoverIntegrationTests : IDisposable
         var provider = CreateProviderWithMockHttp(handler);
 
         var item = new Mock<Book>();
-        item.SetupGet(i => i.Path).Returns((string?)null);
+        item.SetupGet(i => i.Path).Returns((string)null!);
         item.SetupGet(i => i.Name).Returns(string.Empty);
 
         var result = await provider.GetImage(item.Object, ImageType.Primary, CancellationToken.None);

@@ -160,6 +160,6 @@ public class OnlineRetryOrderTests
         var result = await Fetcher(handler).FetchCoverAsync("Quiet Harbour", "Ana Ruiz", CancellationToken.None);
 
         Assert.NotNull(result);
-        Assert.Single(handler.RequestedUrls.Where(u => u.Contains("/search", StringComparison.Ordinal)));
+        Assert.Single(handler.RequestedUrls, u => u.Contains("/search", StringComparison.Ordinal));
     }
 }
