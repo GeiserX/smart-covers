@@ -60,13 +60,15 @@ internal static class MobiCoverExtractor
             return null;
         }
 
-        var firstImageIndex = (int)ReadUInt32(record0, MobiFirstImageIndexOffset);
-        if (firstImageIndex <= 0 || firstImageIndex >= offsets.Length)
+        // Compared unsigned and never cast until it is known to fit: a header
+        // claiming 0x7FFFFFFF must not become a negative index.
+        var firstImageIndex = ReadUInt32(record0, MobiFirstImageIndexOffset);
+        if (firstImageIndex == 0 || firstImageIndex >= (uint)offsets.Length)
         {
             return null;
         }
 
-        foreach (var index in CandidateIndexes(record0, firstImageIndex, offsets.Length))
+        foreach (var index in CandidateIndexes(record0, (int)firstImageIndex, offsets.Length))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -99,10 +101,12 @@ internal static class MobiCoverExtractor
                 continue;
             }
 
-            var index = firstImageIndex + (int)offset.Value;
-            if (index > 0 && index < recordCount && seen.Add(index))
+            // EXTH 201 is a delta on first_image_index. Added in long, because a
+            // crafted delta would otherwise wrap into a valid-looking index.
+            var index = firstImageIndex + (long)offset.Value;
+            if (index > 0 && index < recordCount && seen.Add((int)index))
             {
-                yield return index;
+                yield return (int)index;
             }
         }
 
@@ -132,23 +136,33 @@ internal static class MobiCoverExtractor
         }
 
         // The MOBI header starts at 16 and declares its own length; EXTH follows it.
-        var mobiHeaderLength = (int)ReadUInt32(record0, 20);
+        // Every offset here comes out of the file, so the arithmetic is done in long
+        // and bounds-checked before anything is narrowed to an index. In int, a
+        // declared length of 0x7FFFFFFF would wrap past the length check and index
+        // the array with a negative number.
+        long mobiHeaderLength = ReadUInt32(record0, 20);
         var exth = 16 + mobiHeaderLength;
 
-        if (mobiHeaderLength <= 0 || exth + 12 > record0.Length
-            || record0[exth] != (byte)'E' || record0[exth + 1] != (byte)'X'
-            || record0[exth + 2] != (byte)'T' || record0[exth + 3] != (byte)'H')
+        if (mobiHeaderLength <= 0 || exth + 12 > record0.Length)
         {
             return null;
         }
 
-        var entryCount = (int)ReadUInt32(record0, exth + 8);
-        var cursor = exth + 12;
+        var exthStart = (int)exth;
 
-        for (var i = 0; i < entryCount && cursor + 8 <= record0.Length; i++)
+        if (record0[exthStart] != (byte)'E' || record0[exthStart + 1] != (byte)'X'
+            || record0[exthStart + 2] != (byte)'T' || record0[exthStart + 3] != (byte)'H')
         {
-            var entryTag = (int)ReadUInt32(record0, cursor);
-            var entryLength = (int)ReadUInt32(record0, cursor + 4);
+            return null;
+        }
+
+        long entryCount = ReadUInt32(record0, exthStart + 8);
+        long cursor = exthStart + 12;
+
+        for (long i = 0; i < entryCount && cursor + 8 <= record0.Length; i++)
+        {
+            var entryTag = ReadUInt32(record0, (int)cursor);
+            long entryLength = ReadUInt32(record0, (int)cursor + 4);
 
             // Length covers the 8-byte header; anything smaller would not advance.
             if (entryLength < 8 || cursor + entryLength > record0.Length)
@@ -156,9 +170,9 @@ internal static class MobiCoverExtractor
                 return null;
             }
 
-            if (entryTag == tag && entryLength == 12)
+            if (entryTag == (uint)tag && entryLength == 12)
             {
-                return ReadUInt32(record0, cursor + 8);
+                return ReadUInt32(record0, (int)cursor + 8);
             }
 
             cursor += entryLength;

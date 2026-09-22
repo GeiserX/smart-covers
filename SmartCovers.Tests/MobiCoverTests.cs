@@ -182,6 +182,43 @@ public class MobiCoverTests
             () => MobiCoverExtractor.TryExtractCover(stream, cts.Token));
     }
 
+    [Theory]
+    // 0x7FFFFFFF + 16 overflows int: the bounds check has to be done in long, or
+    // it passes with a negative offset and the next read throws.
+    [InlineData(0x7FFFFFFFu)]
+    [InlineData(0xFFFFFFFFu)]
+    [InlineData(0x80000000u)]
+    public void TryExtractCover_ExthHeaderLengthOverflows_ReturnsNullWithoutThrowing(uint headerLength)
+    {
+        // The only image record is junk, so once EXTH is unusable there is nothing
+        // left to find and the answer must be null rather than an exception.
+        var mobi = BuildMobi([new byte[2000]], coverOffset: 0);
+        BinaryPrimitives.WriteUInt32BigEndian(mobi.AsSpan(78 + (3 * 8) + 20, 4), headerLength);
+
+        using var stream = new MemoryStream(mobi);
+        Assert.Null(MobiCoverExtractor.TryExtractCover(stream));
+    }
+
+    [Fact]
+    public void TryExtractCover_FirstImageIndexOverflows_ReturnsNullWithoutThrowing()
+    {
+        var mobi = BuildMobi([new byte[2000]], coverOffset: 0);
+        BinaryPrimitives.WriteUInt32BigEndian(mobi.AsSpan(78 + (3 * 8) + 0x6C, 4), 0x7FFFFFFF);
+
+        using var stream = new MemoryStream(mobi);
+        Assert.Null(MobiCoverExtractor.TryExtractCover(stream));
+    }
+
+    [Fact]
+    public void TryExtractCover_CoverOffsetOverflows_ReturnsNullWithoutThrowing()
+    {
+        // EXTH 201 is a delta added to first_image_index; a huge one must not wrap.
+        var mobi = BuildMobi([new byte[2000]], coverOffset: 0x7FFFFFFF);
+
+        using var stream = new MemoryStream(mobi);
+        Assert.Null(MobiCoverExtractor.TryExtractCover(stream));
+    }
+
     [Fact]
     public void TryExtractCover_NotAMobi_ReturnsNull()
     {
@@ -234,18 +271,29 @@ public class MobiCoverTests
     [InlineData("exthZeroLengthEntry")]
     // The EXTH flag is set but no EXTH block actually follows.
     [InlineData("exthMissingMagic")]
+    // A MOBI header length that overflows int when 16 is added to it.
+    [InlineData("exthHeaderLengthOverflow")]
+    // An EXTH entry whose declared length overflows int when added to the cursor.
+    [InlineData("exthEntryLengthOverflow")]
     public void TryExtractCover_UnreadableExth_StillFindsTheImageByScanning(string damage)
     {
         var mobi = BuildMobi([FakeJpeg(3000, 0xCC)], coverOffset: 0);
         var record0Start = 78 + (3 * 8);
 
-        if (damage == "exthZeroLengthEntry")
+        switch (damage)
         {
-            BinaryPrimitives.WriteUInt32BigEndian(mobi.AsSpan(record0Start + 16 + 232 + 16, 4), 0);
-        }
-        else
-        {
-            mobi[record0Start + 16 + 232] = (byte)'X';
+            case "exthZeroLengthEntry":
+                BinaryPrimitives.WriteUInt32BigEndian(mobi.AsSpan(record0Start + 16 + 232 + 16, 4), 0);
+                break;
+            case "exthMissingMagic":
+                mobi[record0Start + 16 + 232] = (byte)'X';
+                break;
+            case "exthHeaderLengthOverflow":
+                BinaryPrimitives.WriteUInt32BigEndian(mobi.AsSpan(record0Start + 20, 4), 0x7FFFFFFF);
+                break;
+            case "exthEntryLengthOverflow":
+                BinaryPrimitives.WriteUInt32BigEndian(mobi.AsSpan(record0Start + 16 + 232 + 16, 4), 0x7FFFFFFF);
+                break;
         }
 
         using var stream = new MemoryStream(mobi);
