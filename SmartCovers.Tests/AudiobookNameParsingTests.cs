@@ -41,9 +41,64 @@ public class AudiobookNameParsingTests
     [Fact]
     public void ParseBookInfo_ExtensionLeftInTheItemName_IsDropped()
     {
-        var (title, _) = OnlineCoverFetcher.ParseBookInfo(Named("Quiet Harbour (Unabridged).m4b"));
+        var (title, _) = OnlineCoverFetcher.ParseBookInfo(Named("Quiet Harbour At Dawn.m4b"));
 
-        Assert.Equal("Quiet Harbour (Unabridged)", title);
+        Assert.Equal("Quiet Harbour At Dawn", title);
+    }
+
+    [Theory]
+    // A narration tag says how the book was read, not what it is called.
+    [InlineData("Quiet Harbour (Unabridged)", "Quiet Harbour")]
+    [InlineData("Quiet Harbour [Unabridged]", "Quiet Harbour")]
+    [InlineData("Quiet Harbour (Abridged)", "Quiet Harbour")]
+    [InlineData("Quiet Harbour - Unabridged", "Quiet Harbour")]
+    [InlineData("Quiet Harbour Unabridged", "Quiet Harbour")]
+    // An edition clause is not part of the title either.
+    [InlineData("Quiet Harbour, Second Edition", "Quiet Harbour")]
+    [InlineData("Quiet Harbour, 2nd Edition", "Quiet Harbour")]
+    [InlineData("Quiet Harbour (Expanded Edition)", "Quiet Harbour")]
+    [InlineData("Quiet Harbour (The Expanded Edition)", "Quiet Harbour")]
+    [InlineData("Quiet Harbour, Revised and Updated Edition", "Quiet Harbour")]
+    [InlineData("Quiet Harbour (Unabridged), Second Edition", "Quiet Harbour")]
+    public void ParseBookInfo_EditionAndNarrationTags_AreStripped(string name, string expected)
+    {
+        var (title, _) = OnlineCoverFetcher.ParseBookInfo(Named(name));
+
+        Assert.Equal(expected, title);
+    }
+
+    [Theory]
+    // The other direction: the words only go when something marks them as a tag.
+    [InlineData("The Paris Edition")]
+    [InlineData("A History of the Edition")]
+    [InlineData("Unabridged Dictionaries of the World")]
+    [InlineData("Quiet Harbour")]
+    public void ParseBookInfo_TitlesThatMerelyContainThoseWords_AreLeftAlone(string name)
+    {
+        var (title, _) = OnlineCoverFetcher.ParseBookInfo(Named(name));
+
+        Assert.Equal(name, title);
+    }
+
+    [Fact]
+    public void ParseBookInfo_TheBlackSwanShape_ReducesToASearchableMainTitle()
+    {
+        // ", Second Edition" sat between the title and its subtitle, so dropping the
+        // subtitle alone still left an edition clause no catalogue would match.
+        var (title, _) = OnlineCoverFetcher.ParseBookInfo(
+            Named("Quiet Harbour, Second Edition: The Impact of the Tide: Estuary, Book 2"));
+
+        Assert.Equal("Quiet Harbour: The Impact of the Tide: Estuary, Book 2", title);
+        Assert.Equal("Quiet Harbour", OnlineCoverFetcher.MainTitleOf(title));
+    }
+
+    [Fact]
+    public void ParseBookInfo_CrossingTheChasmShape_LosesOnlyTheNarrationTag()
+    {
+        var (title, author) = OnlineCoverFetcher.ParseBookInfo(Named("Quiet Harbour (Unabridged).m4b"));
+
+        Assert.Equal("Quiet Harbour", title);
+        Assert.Null(author);
     }
 
     [Fact]

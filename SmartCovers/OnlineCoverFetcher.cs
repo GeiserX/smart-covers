@@ -58,6 +58,22 @@ public class OnlineCoverFetcher
         @"\s+(?:19|20)\d{2}\s*$",
         RegexOptions.Compiled);
 
+    // An edition clause: ", Second Edition", "(2nd Edition)", "(The Expanded Edition)".
+    // The qualifier before "Edition" is required, and so is the comma or bracket that
+    // introduces it, so a title that simply contains the word ("The Paris Edition")
+    // keeps it.
+    private static readonly Regex EditionClauseRegex = new(
+        @"\s*[,(\[]\s*(?:the\s+)?"
+        + @"(?:\d{1,2}(?:st|nd|rd|th)|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth"
+        + @"|revised|expanded|updated|anniversary|special|deluxe|new)"
+        + @"(?:\s+(?:and|&)\s+\w+)?\s+edition\s*[)\]]?",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    // A narration tag: "(Unabridged)", "[Unabridged]", or a trailing bare "Unabridged".
+    private static readonly Regex NarrationTagRegex = new(
+        @"\s*(?:[(\[]\s*(?:un)?abridged\s*[)\]]|[-–—]?\s*(?:un)?abridged\s*$)",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     // An extension that leaked into the item name: "Crossing the Chasm.m4b".
     private static readonly Regex MediaExtensionSuffixRegex = new(
         @"\.(?:mp3|m4a|m4b|flac|ogg|opus|wma|aac|wav|epub|pdf|mobi|azw3?|prc|cbz|cbr)\s*$",
@@ -532,6 +548,8 @@ public class OnlineCoverFetcher
     {
         text = FormatTagRegex.Replace(text, "");
         text = LocaleTagRegex.Replace(text, "");
+        text = EditionClauseRegex.Replace(text, "");
+        text = NarrationTagRegex.Replace(text, "");
         text = AudibleCodeRegex.Replace(text, "");
         text = ParenYearRegex.Replace(text, "");
         text = TrailingYearRegex.Replace(text, "");
