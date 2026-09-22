@@ -1,7 +1,6 @@
 using Moq;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Model.Serialization;
-using SmartCovers.Configuration;
 using Xunit;
 
 namespace SmartCovers.Tests;
@@ -64,7 +63,7 @@ public class PluginTests
     [Fact]
     public void Plugin_Instance_IsNotNull_AfterConstruction()
     {
-        var plugin = CreatePlugin();
+        _ = CreatePlugin();
         Assert.NotNull(Plugin.Instance);
         // Configuration defaults are tested in ConfigurationTests
     }

@@ -83,8 +83,10 @@ Any leading null/padding bytes injected by the raw stream copy are stripped auto
 
 For multi-file audiobooks stored as a directory of chapter files, the plugin:
 
-1. Checks for sidecar images in the folder (`cover.jpg`, `folder.jpg`, `front.jpg`, `poster.jpg`, `thumb.jpg`).
-2. Falls back to extracting embedded art from the first audio file in the directory.
+1. Works out which folder names the book. A track is called `01` or `Pista 1`, which identifies nothing, so the folder name is used instead -- and for a multi-disc rip (`CD1`, `Disco 3`, `<title> CD 4`, or a bare number) the folder above the disc. It never climbs to the library root, and never treats a shelf of several books as one book.
+2. Checks for an image file in that folder: an exact `cover.jpg` / `folder.jpg` / `front.jpg` / `poster.jpg` / `thumb.jpg`, then any image whose name contains a cover word (`CoverArt.jpg`), then -- if the folder holds exactly one image -- that image.
+3. Falls back to embedded art from the first audio file, looking inside the first disc subfolder when the folder itself holds no audio.
+4. Remembers the result per book folder, hit or miss, so a hundred-track rip costs one lookup rather than a hundred.
 
 ### Online Cover Fetching (Last Resort)
 
@@ -92,11 +94,28 @@ When all local extraction methods fail, the plugin can search online sources for
 
 1. **Open Library** (openlibrary.org) -- searched first, using title and author metadata.
 2. **Google Books** (books.google.com) -- searched as a fallback, preferring the highest-resolution image available.
-3. If author-qualified search finds nothing, a title-only retry is attempted on Open Library.
+3. If the author-qualified search finds nothing, the title alone is retried; then title and author swapped, since plenty of folders are named `<Author> - <Title>` and nothing in the name says which half is which; then the main title with its subtitle dropped, which is how catalogues index a title.
+
+A title that identifies nothing is never searched for. A numbered disc folder yields the title `2`, which matches hundreds of thousands of books -- the first one's cover would otherwise be shipped as yours. The subtitle retry is likewise limited to multi-word main titles.
 
 The plugin parses clean titles and authors from item metadata, stripping common audiobook filename noise (format tags like `(Mp3)`, locale tags like `[Castellano]`, Audible codes, year suffixes, and series indicators). No API keys are required. Fetched covers are cached by Jellyfin after the first scan, so online lookups only happen once per item.
 
 This feature is **enabled by default** and can be toggled in the plugin settings.
+
+### Refreshing Covers That Were Missed
+
+Jellyfin asks image providers for a cover once, when an item is new, and does not
+come back to a miss. So anything already in your library when you installed the
+plugin keeps its blank tile, however well the plugin works from then on -- and so
+does anything that was scanned while an online catalogue happened to be
+rate-limited.
+
+The plugin ships a scheduled task, **Refresh items missing a cover**, to close
+that gap. It finds books, audiobooks and audiobook folders with no primary image
+in the libraries where SmartCovers is enabled as an image fetcher, and refreshes
+their images -- metadata is left alone and any image you already have is kept. It
+runs daily at 04:00 by default, and you can run it on demand from **Dashboard ->
+Scheduled Tasks**, where its schedule can also be changed or the task disabled.
 
 ## Installation
 

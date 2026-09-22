@@ -1,0 +1,24 @@
+# Code style rules that CI enforces. Deliberately a short list: every rule here
+# marks code that is dead, unused or redundant, which is a defect worth a build
+# failure. Formatting *preferences* are left alone — in particular IDE0008
+# ("use explicit type") is NOT enabled, because this codebase uses `var` and
+# turning it on would flag most lines in the repo.
+#
+# Severity has to be set explicitly: with no .editorconfig these default below
+# `warning`, and `dotnet format style --verify-no-changes` only fails on
+# `warning` or above, so the CI step passes whatever it is given.
+root = true
+
+[*.cs]
+# Dead and unused code.
+dotnet_diagnostic.IDE0005.severity = warning  # unnecessary using directive
+dotnet_diagnostic.IDE0035.severity = warning  # unreachable code
+dotnet_diagnostic.IDE0051.severity = warning  # unused private member
+dotnet_diagnostic.IDE0052.severity = warning  # unread private member
+dotnet_diagnostic.IDE0059.severity = warning  # value assigned but never used
+dotnet_diagnostic.IDE0060.severity = warning  # unused parameter
+
+# Redundancy that hides intent.
+dotnet_diagnostic.IDE0079.severity = warning  # unnecessary suppression
+dotnet_diagnostic.IDE0090.severity = warning  # `new()` instead of `new T()`
+dotnet_diagnostic.IDE0161.severity = warning  # file-scoped namespace, as used throughout

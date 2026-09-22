@@ -111,7 +111,7 @@ public class OnlineCoverFetcherTests
         // the IsNullOrWhiteSpace branch. Test passes with null OriginalTitle.
         var item = new Mock<Book>();
         item.SetupGet(i => i.Name).Returns("Test Book");
-        item.SetupGet(i => i.Path).Returns((string?)null);
+        item.SetupGet(i => i.Path).Returns((string)null!);
 
         var result = await fetcher.FetchCoverByOriginalTitleAsync(item.Object, CancellationToken.None);
         Assert.Null(result);
@@ -121,7 +121,7 @@ public class OnlineCoverFetcherTests
     public void ParseBookInfo_NullNameUsesPath()
     {
         var item = new Mock<BaseItem>();
-        item.SetupGet(i => i.Name).Returns((string?)null);
+        item.SetupGet(i => i.Name).Returns((string)null!);
         item.SetupGet(i => i.Path).Returns("/books/My Great Book.epub");
 
         var (title, author) = OnlineCoverFetcher.ParseBookInfo(item.Object);
@@ -133,8 +133,8 @@ public class OnlineCoverFetcherTests
     public void ParseBookInfo_NullNameNullPath_ReturnsEmpty()
     {
         var item = new Mock<BaseItem>();
-        item.SetupGet(i => i.Name).Returns((string?)null);
-        item.SetupGet(i => i.Path).Returns((string?)null);
+        item.SetupGet(i => i.Name).Returns((string)null!);
+        item.SetupGet(i => i.Path).Returns((string)null!);
 
         var (title, author) = OnlineCoverFetcher.ParseBookInfo(item.Object);
         Assert.Equal(string.Empty, title);
@@ -148,7 +148,7 @@ public class OnlineCoverFetcherTests
         var albumArtist = item.As<IHasAlbumArtist>();
         albumArtist.SetupGet(a => a.AlbumArtists).Returns(new[] { "Stephen King" });
         item.SetupGet(i => i.Name).Returns("The Shining Stephen King");
-        item.SetupGet(i => i.Path).Returns((string?)null);
+        item.SetupGet(i => i.Path).Returns((string)null!);
 
         var (title, author) = OnlineCoverFetcher.ParseBookInfo(item.Object);
         Assert.Equal("Stephen King", author);
@@ -165,7 +165,7 @@ public class OnlineCoverFetcherTests
         albumArtist.SetupGet(a => a.AlbumArtists).Returns(Array.Empty<string>());
         artistItem.SetupGet(a => a.Artists).Returns(new[] { "Artist Name" });
         item.SetupGet(i => i.Name).Returns("Song Title Artist Name");
-        item.SetupGet(i => i.Path).Returns((string?)null);
+        item.SetupGet(i => i.Path).Returns((string)null!);
 
         var (title, author) = OnlineCoverFetcher.ParseBookInfo(item.Object);
         Assert.Equal("Artist Name", author);
@@ -180,7 +180,7 @@ public class OnlineCoverFetcherTests
         var artistItem = item.As<IHasArtist>();
         artistItem.SetupGet(a => a.Artists).Returns(new[] { "Real Artist" });
         item.SetupGet(i => i.Name).Returns("Track Real Artist");
-        item.SetupGet(i => i.Path).Returns((string?)null);
+        item.SetupGet(i => i.Path).Returns((string)null!);
 
         var (title, author) = OnlineCoverFetcher.ParseBookInfo(item.Object);
         Assert.Equal("Real Artist", author);
@@ -191,7 +191,7 @@ public class OnlineCoverFetcherTests
     {
         var item = new Mock<BaseItem>();
         item.SetupGet(i => i.Name).Returns("My Book (Mp3 320kbps) [Castellano] [B012ABC345] (2021) - 2020 - Saga completa");
-        item.SetupGet(i => i.Path).Returns((string?)null);
+        item.SetupGet(i => i.Path).Returns((string)null!);
 
         var (title, _) = OnlineCoverFetcher.ParseBookInfo(item.Object);
         Assert.DoesNotContain("Mp3", title);
@@ -207,7 +207,7 @@ public class OnlineCoverFetcherTests
     {
         var item = new Mock<BaseItem>();
         item.SetupGet(i => i.Name).Returns("Audiobook (M4a 128kbps)");
-        item.SetupGet(i => i.Path).Returns((string?)null);
+        item.SetupGet(i => i.Path).Returns((string)null!);
 
         var (title, _) = OnlineCoverFetcher.ParseBookInfo(item.Object);
         Assert.Equal("Audiobook", title);
@@ -218,7 +218,7 @@ public class OnlineCoverFetcherTests
     {
         var item = new Mock<BaseItem>();
         item.SetupGet(i => i.Name).Returns("Album (FLAC 24bit)");
-        item.SetupGet(i => i.Path).Returns((string?)null);
+        item.SetupGet(i => i.Path).Returns((string)null!);
 
         var (title, _) = OnlineCoverFetcher.ParseBookInfo(item.Object);
         Assert.Equal("Album", title);
@@ -229,7 +229,7 @@ public class OnlineCoverFetcherTests
     {
         var item = new Mock<BaseItem>();
         item.SetupGet(i => i.Name).Returns("Book Title [English Version]");
-        item.SetupGet(i => i.Path).Returns((string?)null);
+        item.SetupGet(i => i.Path).Returns((string)null!);
 
         var (title, _) = OnlineCoverFetcher.ParseBookInfo(item.Object);
         Assert.DoesNotContain("English", title);
@@ -240,7 +240,7 @@ public class OnlineCoverFetcherTests
     {
         var item = new Mock<BaseItem>();
         item.SetupGet(i => i.Name).Returns("Lord of the Rings - Trilogia completa");
-        item.SetupGet(i => i.Path).Returns((string?)null);
+        item.SetupGet(i => i.Path).Returns((string)null!);
 
         var (title, _) = OnlineCoverFetcher.ParseBookInfo(item.Object);
         Assert.Equal("Lord of the Rings", title);
@@ -251,7 +251,7 @@ public class OnlineCoverFetcherTests
     {
         var item = new Mock<BaseItem>();
         item.SetupGet(i => i.Name).Returns("Comic Series - Vol. 3");
-        item.SetupGet(i => i.Path).Returns((string?)null);
+        item.SetupGet(i => i.Path).Returns((string)null!);
 
         var (title, _) = OnlineCoverFetcher.ParseBookInfo(item.Object);
         Assert.Equal("Comic Series", title);
@@ -263,7 +263,7 @@ public class OnlineCoverFetcherTests
         // Dash too close to start or end should not split
         var item = new Mock<BaseItem>();
         item.SetupGet(i => i.Name).Returns("AB - CD");
-        item.SetupGet(i => i.Path).Returns((string?)null);
+        item.SetupGet(i => i.Path).Returns((string)null!);
 
         var (title, author) = OnlineCoverFetcher.ParseBookInfo(item.Object);
         // "AB" is only 2 chars (dashIdx = 2, not > 2), so it won't split

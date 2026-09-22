@@ -1,5 +1,3 @@
-using System.Net;
-using System.Text;
 using Moq;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller.Entities;
@@ -93,7 +91,7 @@ public class OnlineCoverIntegrationTests : IDisposable
         var provider = CreateProviderWithMockHttp(handler);
 
         var item = new Mock<Book>();
-        item.SetupGet(i => i.Path).Returns((string?)null);
+        item.SetupGet(i => i.Path).Returns((string)null!);
         item.SetupGet(i => i.Name).Returns("Great Book");
 
         var result = await provider.GetImage(item.Object, ImageType.Primary, CancellationToken.None);
@@ -184,7 +182,7 @@ public class OnlineCoverIntegrationTests : IDisposable
         var provider = CreateProviderWithMockHttp(handler);
 
         var item = new Mock<Book>();
-        item.SetupGet(i => i.Path).Returns((string?)null);
+        item.SetupGet(i => i.Path).Returns((string)null!);
         item.SetupGet(i => i.Name).Returns("Nonexistent Book");
 
         var result = await provider.GetImage(item.Object, ImageType.Primary, CancellationToken.None);
@@ -229,7 +227,7 @@ public class OnlineCoverIntegrationTests : IDisposable
         var provider = CreateProviderWithMockHttp(handler);
 
         var item = new Mock<Book>();
-        item.SetupGet(i => i.Path).Returns((string?)null);
+        item.SetupGet(i => i.Path).Returns((string)null!);
         item.SetupGet(i => i.Name).Returns("Error Book");
 
         var result = await provider.GetImage(item.Object, ImageType.Primary, CancellationToken.None);
@@ -243,7 +241,7 @@ public class OnlineCoverIntegrationTests : IDisposable
         var provider = CreateProviderWithMockHttp(handler);
 
         var item = new Mock<Book>();
-        item.SetupGet(i => i.Path).Returns((string?)null);
+        item.SetupGet(i => i.Path).Returns((string)null!);
         item.SetupGet(i => i.Name).Returns(string.Empty);
 
         var result = await provider.GetImage(item.Object, ImageType.Primary, CancellationToken.None);
@@ -324,8 +322,9 @@ public class OnlineCoverIntegrationTests : IDisposable
 
         var provider = CreateProviderWithMockHttp(handler);
 
-        // AudioBook extends Audio, so online fallback is skipped.
-        // Use Book with a directory path to test folder scan -> online fallback.
+        // A Book whose path is a directory: folder scan finds nothing on disk, so
+        // the online fallback answers. (AudioBook also reaches it now — see
+        // AudiobookFolderCoverTests.)
         var bookDir = Path.Combine(_tmpDir, "book-folder");
         Directory.CreateDirectory(bookDir);
 
