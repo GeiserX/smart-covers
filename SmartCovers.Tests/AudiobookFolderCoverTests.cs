@@ -179,14 +179,37 @@ public class AudiobookFolderCoverTests : IDisposable
     }
 
     [Fact]
-    public void Supports_PlainFolder_IsTrue_ButNotALibraryRootFolder()
+    public void Supports_APlainFolder_ButNothingElseThatDerivesFromOne()
     {
         var provider = Provider(new MockHttpHandler());
 
-        Assert.True(provider.Supports(new Mock<Folder>().Object));
-        Assert.False(provider.Supports(new Mock<CollectionFolder>().Object));
-        Assert.False(provider.Supports(new Mock<UserRootFolder>().Object));
-        Assert.False(provider.Supports(new Mock<AggregateFolder>().Object));
+        // A folder audiobook is modelled as exactly this type.
+        Assert.True(provider.Supports(new Folder()));
+
+        // Everything else with children derives from Folder, and none of it wants
+        // a book cover fetched from a book catalogue.
+        Assert.False(provider.Supports(new CollectionFolder()));
+        Assert.False(provider.Supports(new UserRootFolder()));
+        Assert.False(provider.Supports(new AggregateFolder()));
+        Assert.False(provider.Supports(new MediaBrowser.Controller.Entities.TV.Series()));
+        Assert.False(provider.Supports(new MediaBrowser.Controller.Entities.TV.Season()));
+        Assert.False(provider.Supports(new MediaBrowser.Controller.Entities.Movies.BoxSet()));
+        Assert.False(provider.Supports(new MediaBrowser.Controller.Entities.Audio.MusicArtist()));
+        Assert.False(provider.Supports(new PhotoAlbum()));
+    }
+
+    [Fact]
+    public async Task ATvSeasonFolder_IsNeverGivenABookCover()
+    {
+        // A Season is a Folder full of episodes: no subfolders and no book files,
+        // so only the exact-type test in Supports keeps it out of the catalogue.
+        var season = MakeDir("Some Show", "Season 1");
+        File.WriteAllBytes(Path.Combine(season, "S01E01.mkv"), new byte[256]);
+
+        var item = new MediaBrowser.Controller.Entities.TV.Season { Path = season, Name = "Season 1" };
+        var provider = Provider(HandlerThatAlwaysFindsACover());
+
+        Assert.False(provider.Supports(item));
     }
 
     [Fact]
@@ -195,12 +218,10 @@ public class AudiobookFolderCoverTests : IDisposable
         var book = MakeDir("Quiet Harbour (mp3) Ana Ruiz 1984");
         MakeTrack(book, "01 - Pista 1.mp3");
 
-        var item = new Mock<Folder>();
-        item.SetupGet(i => i.Path).Returns(book);
-        item.SetupGet(i => i.Name).Returns("Quiet Harbour (mp3) Ana Ruiz 1984");
+        var item = new Folder { Path = book, Name = "Quiet Harbour (mp3) Ana Ruiz 1984" };
 
         var handler = HandlerThatAlwaysFindsACover();
-        var result = await Provider(handler).GetImage(item.Object, ImageType.Primary, CancellationToken.None);
+        var result = await Provider(handler).GetImage(item, ImageType.Primary, CancellationToken.None);
 
         Assert.True(result.HasImage);
         Assert.Contains("Quiet Harbour", SearchedTitles(handler), StringComparison.Ordinal);
@@ -211,12 +232,10 @@ public class AudiobookFolderCoverTests : IDisposable
     {
         MakeDir("Quiet Harbour (mp3) Ana Ruiz 1984");
 
-        var item = new Mock<Folder>();
-        item.SetupGet(i => i.Path).Returns(_libraryDir);
-        item.SetupGet(i => i.Name).Returns("Audiobooks");
+        var item = new Folder { Path = _libraryDir, Name = "Audiobooks" };
 
         var handler = HandlerThatAlwaysFindsACover();
-        var result = await Provider(handler).GetImage(item.Object, ImageType.Primary, CancellationToken.None);
+        var result = await Provider(handler).GetImage(item, ImageType.Primary, CancellationToken.None);
 
         Assert.False(result.HasImage);
         Assert.Empty(handler.RequestedUrls);
@@ -229,12 +248,10 @@ public class AudiobookFolderCoverTests : IDisposable
         File.WriteAllBytes(Path.Combine(shelf, "Issue 01.cbr"), new byte[256]);
         File.WriteAllBytes(Path.Combine(shelf, "Issue 02.cbr"), new byte[256]);
 
-        var item = new Mock<Folder>();
-        item.SetupGet(i => i.Path).Returns(shelf);
-        item.SetupGet(i => i.Name).Returns("Some Comic Collection");
+        var item = new Folder { Path = shelf, Name = "Some Comic Collection" };
 
         var handler = HandlerThatAlwaysFindsACover();
-        var result = await Provider(handler).GetImage(item.Object, ImageType.Primary, CancellationToken.None);
+        var result = await Provider(handler).GetImage(item, ImageType.Primary, CancellationToken.None);
 
         Assert.False(result.HasImage);
         Assert.Empty(handler.RequestedUrls);
@@ -286,12 +303,10 @@ public class AudiobookFolderCoverTests : IDisposable
         MakeTrack(disc, "01 - Pista 1.mp3");
         File.WriteAllBytes(Path.Combine(disc, "cover.jpg"), FakeJpeg(4321));
 
-        var item = new Mock<Folder>();
-        item.SetupGet(i => i.Path).Returns(book);
-        item.SetupGet(i => i.Name).Returns("Quiet Harbour (mp3) Ana Ruiz 1984");
+        var item = new Folder { Path = book, Name = "Quiet Harbour (mp3) Ana Ruiz 1984" };
 
         var handler = HandlerThatAlwaysFindsACover();
-        var result = await Provider(handler).GetImage(item.Object, ImageType.Primary, CancellationToken.None);
+        var result = await Provider(handler).GetImage(item, ImageType.Primary, CancellationToken.None);
 
         Assert.True(result.HasImage);
         Assert.Equal(4321, result.Stream!.Length);

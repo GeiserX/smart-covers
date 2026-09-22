@@ -139,15 +139,17 @@ public class CoverImageProvider : IDynamicImageProvider
 
     /// <inheritdoc />
     /// <remarks>
-    /// Folders are included because a multi-file audiobook IS a folder in Jellyfin —
-    /// the tracks are separate items and the folder is what the library grid shows.
-    /// Library roots are excluded here, and <see cref="GetImage"/> refuses any folder
-    /// that holds more than one book, so a shelf never gets a guessed cover.
+    /// Plain folders are included because a multi-file audiobook IS a folder in
+    /// Jellyfin — the tracks are separate items and the folder is what the library
+    /// grid shows. The test is on the exact type: nearly everything with children
+    /// derives from <see cref="Folder"/> (Season, Series, BoxSet, MusicArtist,
+    /// Playlist, CollectionFolder, the library roots), and none of those wants a
+    /// book cover. <see cref="GetImage"/> then refuses any folder holding more than
+    /// one book, so a shelf never gets a guessed cover either.
     /// </remarks>
     public bool Supports(BaseItem item) =>
         item is Book || item is AudioBook || item is Audio || item is MusicAlbum
-        || (item is Folder && item is not CollectionFolder && item is not UserRootFolder
-            && item is not AggregateFolder);
+        || item.GetType() == typeof(Folder);
 
     /// <inheritdoc />
     public IEnumerable<ImageType> GetSupportedImages(BaseItem item)
@@ -248,7 +250,7 @@ public class CoverImageProvider : IDynamicImageProvider
     /// test would silently exclude every audiobook.
     /// </summary>
     private static bool IsBookLike(BaseItem item)
-        => item is Book || item is AudioBook || (item is Folder && item is not MusicAlbum);
+        => item is Book || item is AudioBook || item.GetType() == typeof(Folder);
 
     /// <summary>
     /// The library root this item belongs to, used as a hard ceiling on folder
