@@ -176,6 +176,117 @@ public class MobiCoverTests
         Assert.Null(MobiCoverExtractor.TryExtractCover(stream));
     }
 
+    [Theory]
+    // Record 0 must carry the MOBI magic; without it this is some other PalmDB file.
+    [InlineData("magic")]
+    // first_image_index outside the record table points nowhere.
+    [InlineData("imageIndexZero")]
+    [InlineData("imageIndexPastEnd")]
+    // A record offset table that runs past the end of the file.
+    [InlineData("offsetPastEnd")]
+    // A PalmDB with a single record cannot hold headers and an image.
+    [InlineData("oneRecordOnly")]
+    public void TryExtractCover_MalformedFile_ReturnsNullRatherThanThrowing(string damage)
+    {
+        var mobi = BuildMobi([FakeJpeg(3000, 0xAA)], coverOffset: 0);
+        var record0Start = 78 + (3 * 8);
+
+        switch (damage)
+        {
+            case "magic":
+                mobi[record0Start + 16] = (byte)'X';
+                break;
+            case "imageIndexZero":
+                BinaryPrimitives.WriteUInt32BigEndian(mobi.AsSpan(record0Start + 0x6C, 4), 0);
+                break;
+            case "imageIndexPastEnd":
+                BinaryPrimitives.WriteUInt32BigEndian(mobi.AsSpan(record0Start + 0x6C, 4), 999);
+                break;
+            case "offsetPastEnd":
+                BinaryPrimitives.WriteUInt16BigEndian(mobi.AsSpan(76, 2), 9999);
+                break;
+            case "oneRecordOnly":
+                BinaryPrimitives.WriteUInt16BigEndian(mobi.AsSpan(76, 2), 1);
+                break;
+        }
+
+        using var stream = new MemoryStream(mobi);
+        Assert.Null(MobiCoverExtractor.TryExtractCover(stream));
+    }
+
+    [Theory]
+    // An EXTH entry whose declared length cannot advance the cursor.
+    [InlineData("exthZeroLengthEntry")]
+    // The EXTH flag is set but no EXTH block actually follows.
+    [InlineData("exthMissingMagic")]
+    public void TryExtractCover_UnreadableExth_StillFindsTheImageByScanning(string damage)
+    {
+        var mobi = BuildMobi([FakeJpeg(3000, 0xCC)], coverOffset: 0);
+        var record0Start = 78 + (3 * 8);
+
+        if (damage == "exthZeroLengthEntry")
+        {
+            BinaryPrimitives.WriteUInt32BigEndian(mobi.AsSpan(record0Start + 16 + 232 + 16, 4), 0);
+        }
+        else
+        {
+            mobi[record0Start + 16 + 232] = (byte)'X';
+        }
+
+        using var stream = new MemoryStream(mobi);
+        var result = MobiCoverExtractor.TryExtractCover(stream);
+
+        // Losing the metadata costs precision, not the cover: the scan over the
+        // image records still finds it.
+        Assert.NotNull(result);
+        Assert.Equal(0xCC, result![^1]);
+    }
+
+    [Fact]
+    public void TryExtractCover_StreamEndsBeforeADeclaredRecord_ReturnsNull()
+    {
+        var mobi = BuildMobi([FakeJpeg(3000, 0xBB)], coverOffset: 0);
+
+        // Keep the header and table intact but drop the tail the table promises.
+        using var stream = new MemoryStream(mobi.AsSpan(0, mobi.Length - 2500).ToArray());
+        Assert.Null(MobiCoverExtractor.TryExtractCover(stream));
+    }
+
+    [Fact]
+    public async Task GetImage_MobiWithNoUsableImage_YieldsNoLocalCover()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), $"smartcovers-mobi-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+
+        try
+        {
+            // The only "image" record is junk, so nothing local can be offered.
+            var path = Path.Combine(dir, "Quiet Harbour.mobi");
+            await File.WriteAllBytesAsync(path, BuildMobi([new byte[2000]], coverOffset: 0));
+
+            var handler = new MockHttpHandler();
+            handler.AddJsonResponse("openlibrary.org/search.json", new { docs = Array.Empty<object>() });
+            handler.AddJsonResponse("googleapis.com/books", new { totalItems = 0 });
+
+            var provider = new CoverImageProvider(
+                Mock.Of<ILogger<CoverImageProvider>>(),
+                new OnlineCoverFetcher(Mock.Of<ILogger<OnlineCoverFetcher>>(), new HttpClient(handler)),
+                () => false);
+
+            var item = new Mock<Book>();
+            item.SetupGet(i => i.Path).Returns(path);
+            item.SetupGet(i => i.Name).Returns("Quiet Harbour");
+
+            var result = await provider.GetImage(item.Object, ImageType.Primary, CancellationToken.None);
+
+            Assert.False(result.HasImage);
+        }
+        finally
+        {
+            try { Directory.Delete(dir, true); } catch { }
+        }
+    }
+
     [Fact]
     public void TryExtractCover_TruncatedFile_ReturnsNull()
     {

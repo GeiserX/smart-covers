@@ -354,6 +354,42 @@ public class AudiobookFolderCoverTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task TheCacheIsBounded_AndForgetsTheOldestBook()
+    {
+        // Five books through a cache that holds four: the first is evicted and has
+        // to be looked up again, while the most recent stays free.
+        var books = Enumerable.Range(1, 5)
+            .Select(i =>
+            {
+                var dir = MakeDir($"Quiet Harbour {i} (mp3) Ana Ruiz 1984");
+                MakeTrack(dir, "01 - Pista 1.mp3");
+                return Path.Combine(dir, "01 - Pista 1.mp3");
+            })
+            .ToList();
+
+        var handler = HandlerThatAlwaysFindsACover();
+        var provider = Provider(handler);
+
+        foreach (var track in books)
+        {
+            Assert.True((await provider.GetImage(
+                Track(track, "Pista  1").Object, ImageType.Primary, CancellationToken.None)).HasImage);
+        }
+
+        var afterFirstPass = handler.RequestedUrls.Count;
+
+        // The newest book is still cached.
+        Assert.True((await provider.GetImage(
+            Track(books[4], "Pista  1").Object, ImageType.Primary, CancellationToken.None)).HasImage);
+        Assert.Equal(afterFirstPass, handler.RequestedUrls.Count);
+
+        // The oldest was evicted, so it costs a lookup again.
+        Assert.True((await provider.GetImage(
+            Track(books[0], "Pista  1").Object, ImageType.Primary, CancellationToken.None)).HasImage);
+        Assert.True(handler.RequestedUrls.Count > afterFirstPass);
+    }
+
     [Theory]
     [InlineData("2")]
     [InlineData("12")]
