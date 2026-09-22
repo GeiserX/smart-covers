@@ -47,9 +47,11 @@ jobs:
           dotnet restore SmartCovers/SmartCovers.csproj
           dotnet restore SmartCovers.Tests/SmartCovers.Tests.csproj
 
-      # whitespace and style only. Analyzers are deliberately left out: the repo has
-      # no .editorconfig, so an analyzer pass would enforce whatever the SDK ships
-      # with that month and break the build on an SDK bump rather than on a change.
+      # whitespace and style only. Which style rules count is pinned by the root
+      # .editorconfig — without it every IDE rule sits below `warning` and this step
+      # passes whatever it is given. Third-party analyzers stay out: they would
+      # enforce whatever the SDK ships with that month and break the build on an
+      # SDK bump rather than on a change.
       - name: Check formatting
         run: |
           for project in SmartCovers/SmartCovers.csproj SmartCovers.Tests/SmartCovers.Tests.csproj; do

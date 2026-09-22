@@ -6,7 +6,6 @@ using MediaBrowser.Controller.Entities.Audio;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Drawing;
 using MediaBrowser.Model.Entities;
-using MediaBrowser.Model.Net;
 using Microsoft.Extensions.Logging;
 using PDFtoImage;
 using SharpCompress.Archives;

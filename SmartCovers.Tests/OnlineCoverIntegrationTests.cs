@@ -1,5 +1,3 @@
-using System.Net;
-using System.Text;
 using Moq;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller.Entities;

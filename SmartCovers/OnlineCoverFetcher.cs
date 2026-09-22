@@ -1,4 +1,3 @@
-using System.Net.Http;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using MediaBrowser.Controller.Entities;
@@ -375,7 +374,7 @@ public class OnlineCoverFetcher
         }
 
         _logger.LogDebug("Retrying online cover fetch with OriginalTitle: '{Title}'", originalTitle);
-        var (cleanTitle, author) = ParseBookInfo(item);
+        var (_, author) = ParseBookInfo(item);
 
         // Use the original title but keep the parsed author
         return await FetchCoverAsync(originalTitle, author, cancellationToken).ConfigureAwait(false);
