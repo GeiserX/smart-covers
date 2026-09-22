@@ -18,6 +18,54 @@ internal sealed class OrderedMockHandler : HttpMessageHandler
 
     public List<string> RequestedUrls { get; } = [];
 
+    /// <summary>The requested URIs, kept escaped so query values decode exactly.</summary>
+    public List<Uri> RequestedUris { get; } = [];
+
+    /// <summary>
+    /// The catalogue lookups that were made, in order, each rendered as the decoded
+    /// query it actually asked — "OL title='X' author='Y'", "GB q='X'". Cover image
+    /// downloads are left out; this is the search sequence.
+    /// </summary>
+    public IReadOnlyList<string> LookupSequence => RequestedUris.Select(Describe).OfType<string>().ToList();
+
+    private static string? Describe(Uri uri)
+    {
+        var query = ParseQuery(uri);
+
+        if (uri.Host.Contains("openlibrary.org", StringComparison.Ordinal)
+            && uri.AbsolutePath.Contains("search", StringComparison.Ordinal))
+        {
+            var title = query.GetValueOrDefault("title", string.Empty);
+            return query.TryGetValue("author", out var author)
+                ? $"OL title='{title}' author='{author}'"
+                : $"OL title='{title}'";
+        }
+
+        if (uri.Host.Contains("googleapis.com", StringComparison.Ordinal))
+        {
+            return $"GB q='{query.GetValueOrDefault("q", string.Empty)}'";
+        }
+
+        // A cover image download, not a lookup.
+        return null;
+    }
+
+    private static Dictionary<string, string> ParseQuery(Uri uri)
+    {
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        foreach (var pair in uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var split = pair.IndexOf('=', StringComparison.Ordinal);
+            if (split > 0)
+            {
+                result[Uri.UnescapeDataString(pair[..split])] = Uri.UnescapeDataString(pair[(split + 1)..]);
+            }
+        }
+
+        return result;
+    }
+
     public void When(Func<string, bool> match, Func<HttpResponseMessage> respond)
         => _rules.Add((match, respond));
 
@@ -45,6 +93,11 @@ internal sealed class OrderedMockHandler : HttpMessageHandler
     {
         var url = request.RequestUri?.ToString() ?? string.Empty;
         RequestedUrls.Add(url);
+
+        if (request.RequestUri is not null)
+        {
+            RequestedUris.Add(request.RequestUri);
+        }
 
         foreach (var (match, respond) in _rules)
         {
@@ -92,8 +145,18 @@ public class OnlineRetryOrderTests
         Assert.NotNull(result);
         Assert.Equal(5000, result!.Value.Stream.Length);
 
-        var searches = handler.RequestedUrls.Count(u => u.Contains("/search", StringComparison.Ordinal));
-        Assert.True(searches >= 3, $"the swapped query should come after the straight ones, saw {searches}");
+        // The whole sequence, in order. Asserting a count would pass just as happily
+        // if a query were skipped, if Google Books were asked before Open Library, or
+        // if anything were asked after the hit.
+        Assert.Equal(
+            [
+                "OL title='Ana Ruiz' author='Quiet Harbour'",
+                "GB q='intitle:Ana Ruiz+inauthor:Quiet Harbour'",
+                "OL title='Ana Ruiz'",
+                "GB q='Ana Ruiz'",
+                "OL title='Quiet Harbour' author='Ana Ruiz'"
+            ],
+            handler.LookupSequence);
     }
 
     [Fact]
@@ -106,6 +169,16 @@ public class OnlineRetryOrderTests
 
         Assert.NotNull(result);
         Assert.Equal(5000, result!.Value.Stream.Length);
+
+        // With no author there is nothing to retry without and nothing to swap, so
+        // the main-title query is the third and last thing asked.
+        Assert.Equal(
+            [
+                "OL title='Four Thousand Weeks: Time Management for Mortals'",
+                "GB q='Four Thousand Weeks: Time Management for Mortals'",
+                "OL title='Four Thousand Weeks'"
+            ],
+            handler.LookupSequence);
     }
 
     [Fact]
@@ -160,6 +233,8 @@ public class OnlineRetryOrderTests
         var result = await Fetcher(handler).FetchCoverAsync("Quiet Harbour", "Ana Ruiz", CancellationToken.None);
 
         Assert.NotNull(result);
-        Assert.Single(handler.RequestedUrls, u => u.Contains("/search", StringComparison.Ordinal));
+
+        // One lookup and no more: a hit must not be followed by a retry.
+        Assert.Equal(["OL title='Quiet Harbour' author='Ana Ruiz'"], handler.LookupSequence);
     }
 }
