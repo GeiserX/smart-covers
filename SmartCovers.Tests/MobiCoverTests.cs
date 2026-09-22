@@ -168,6 +168,21 @@ public class MobiCoverTests
     }
 
     [Fact]
+    public void TryExtractCover_Cancelled_StopsInsteadOfReadingEveryCandidate()
+    {
+        // The extraction runs synchronously on a pool thread, so the token has to
+        // be honoured inside the read loop or a shutdown waits for it.
+        var mobi = BuildMobi([FakeJpeg(3000, 0xDD)], coverOffset: 0);
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        using var stream = new MemoryStream(mobi);
+
+        Assert.ThrowsAny<OperationCanceledException>(
+            () => MobiCoverExtractor.TryExtractCover(stream, cts.Token));
+    }
+
+    [Fact]
     public void TryExtractCover_NotAMobi_ReturnsNull()
     {
         var mobi = BuildMobi([FakeJpeg(3000, 0x66)], coverOffset: 0, palmType: "TEXtTEXt");

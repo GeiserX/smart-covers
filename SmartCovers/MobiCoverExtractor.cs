@@ -32,7 +32,13 @@ internal static class MobiCoverExtractor
     /// Reads the cover image bytes from a MOBI file, or returns null when the file
     /// is not a MOBI, carries no cover, or is malformed.
     /// </summary>
-    internal static byte[]? TryExtractCover(Stream stream)
+    /// <param name="stream">The MOBI file.</param>
+    /// <param name="cancellationToken">
+    /// Checked between record reads. This runs synchronously on a pool thread, so
+    /// without it a shutdown would wait for every candidate record to be read off
+    /// disk before the refresh could finish.
+    /// </param>
+    internal static byte[]? TryExtractCover(Stream stream, CancellationToken cancellationToken = default)
     {
         var offsets = ReadRecordOffsets(stream, out var fileLength);
         if (offsets == null || offsets.Length < 2)
@@ -40,7 +46,7 @@ internal static class MobiCoverExtractor
             return null;
         }
 
-        var record0 = ReadRecord(stream, offsets, fileLength, 0);
+        var record0 = ReadRecord(stream, offsets, fileLength, 0, cancellationToken);
         if (record0 == null || record0.Length < MobiExthFlagsOffset + 4)
         {
             return null;
@@ -62,7 +68,9 @@ internal static class MobiCoverExtractor
 
         foreach (var index in CandidateIndexes(record0, firstImageIndex, offsets.Length))
         {
-            var bytes = ReadRecord(stream, offsets, fileLength, index);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var bytes = ReadRecord(stream, offsets, fileLength, index, cancellationToken);
             if (bytes != null && bytes.Length >= 1000 && bytes.Length <= MaxImageBytes
                 && CoverImageProvider.DetectImageFormat(bytes).Format != null)
             {
@@ -172,7 +180,7 @@ internal static class MobiCoverExtractor
         }
 
         stream.Position = 0;
-        var header = ReadExactly(stream, PalmHeaderSize);
+        var header = ReadExactly(stream, PalmHeaderSize, CancellationToken.None);
         if (header == null)
         {
             return null;
@@ -192,7 +200,7 @@ internal static class MobiCoverExtractor
             return null;
         }
 
-        var table = ReadExactly(stream, recordCount * RecordEntrySize);
+        var table = ReadExactly(stream, recordCount * RecordEntrySize, CancellationToken.None);
         if (table == null)
         {
             return null;
@@ -211,7 +219,8 @@ internal static class MobiCoverExtractor
     /// <summary>
     /// Reads record <paramref name="index"/>, which runs to the next record's offset.
     /// </summary>
-    private static byte[]? ReadRecord(Stream stream, uint[] offsets, long fileLength, int index)
+    private static byte[]? ReadRecord(
+        Stream stream, uint[] offsets, long fileLength, int index, CancellationToken cancellationToken)
     {
         if (index < 0 || index >= offsets.Length)
         {
@@ -227,15 +236,17 @@ internal static class MobiCoverExtractor
         }
 
         stream.Position = start;
-        return ReadExactly(stream, (int)(end - start));
+        return ReadExactly(stream, (int)(end - start), cancellationToken);
     }
 
-    private static byte[]? ReadExactly(Stream stream, int count)
+    private static byte[]? ReadExactly(Stream stream, int count, CancellationToken cancellationToken)
     {
         var buffer = new byte[count];
         var read = 0;
         while (read < count)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             var n = stream.Read(buffer, read, count - read);
             if (n == 0)
             {

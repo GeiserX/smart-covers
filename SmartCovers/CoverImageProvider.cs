@@ -1278,7 +1278,7 @@ public class CoverImageProvider : IDynamicImageProvider
                 () =>
                 {
                     using var stream = File.OpenRead(path);
-                    return MobiCoverExtractor.TryExtractCover(stream);
+                    return MobiCoverExtractor.TryExtractCover(stream, cancellationToken);
                 },
                 cancellationToken).ConfigureAwait(false);
 
