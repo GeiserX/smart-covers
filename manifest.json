@@ -9,6 +9,14 @@
     "imageUrl": "",
     "versions": [
       {
+        "version": "7.4.0.0",
+        "changelog": "Audiobooks that are a folder of tracks get a cover: the book identity now comes from the folder (climbing out of disc folders), covers already on disk are found under any name, folder items get a cover, and one lookup serves a whole book. MOBI/AZW covers. A daily scheduled task retries items that never got a cover. Edition and narration tags are stripped before searching. A crafted MOBI header can no longer index past the record.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/GeiserX/smart-covers/releases/download/v7.4.0.0/smart-covers_7.4.0.0.zip",
+        "checksum": "c10efe880a8ede9d037d86a274307c72",
+        "timestamp": "2026-09-22T09:19:30Z"
+      },
+      {
         "version": "7.3.2.0",
         "changelog": "Fix plugin loading as NotSupported on Jellyfin 10.11 servers: the CBZ/CBR archive reader (SharpCompress) is now merged into SmartCovers.dll, so the plugin scanner no longer hits an unresolvable reference. No separate SharpCompress.dll is shipped anymore.",
         "targetAbi": "10.11.0.0",
