@@ -134,8 +134,13 @@ public class CoverImageProvider : IDynamicImageProvider
     /// </summary>
     private static bool DefaultPdfiumNativeProbe() => PdfiumNativeLibrary.TryLoad(out _);
 
+    /// <summary>
+    /// The provider name Jellyfin stores in a library's ImageFetchers list.
+    /// </summary>
+    internal const string ProviderName = "SmartCovers";
+
     /// <inheritdoc />
-    public string Name => "SmartCovers";
+    public string Name => ProviderName;
 
     /// <inheritdoc />
     /// <remarks>
@@ -301,7 +306,7 @@ public class CoverImageProvider : IDynamicImageProvider
     /// self-contained book file. A shelf of PDFs or comics is not one book, and
     /// giving it a looked-up cover would be a guess.
     /// </summary>
-    private static bool RepresentsOneBook(string dir)
+    internal static bool RepresentsOneBook(string dir)
     {
         try
         {

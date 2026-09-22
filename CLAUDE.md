@@ -47,12 +47,34 @@ Plugin.cs                            Entry point, IHasWebPages (config UI, sideb
 ├── Configuration/
 │   ├── PluginConfiguration.cs       Settings: DPI, JPEG quality, timeout, online fetch toggle
 │   └── configPage.html              Admin UI — Jellyfin emby-* components, per-library toggle
-├── CoverImageProvider.cs            IDynamicImageProvider: PDF, EPUB, CBZ/CBR, audio, folder, sidecar
+├── CoverImageProvider.cs            IDynamicImageProvider: PDF, EPUB, CBZ/CBR, MOBI, audio, folder, sidecar
+├── BookIdentity.cs                  Which folder names the book (skips CD1/Disco 3/"<title> CD 4")
+├── MobiCoverExtractor.cs            MOBI/AZW cover from the PalmDB image records (EXTH tag 201)
 ├── NaturalStringComparer.cs         Digit-aware ordering (page-2 before page-10) for comic pages
 ├── CoverStatusController.cs         REST API: GET /SmartCovers/Status
 ├── OnlineCoverFetcher.cs            Open Library + Google Books (last resort)
+├── RefreshMissingCoversTask.cs      Scheduled task: retry items that still have no cover
 └── PluginServiceRegistrar.cs        Registers CoverImageProvider as singleton
 ```
+
+### Scheduled Task — "Refresh items missing a cover"
+
+Jellyfin runs image providers once, when an item is new, and never returns to a
+miss. Anything scanned before the plugin was installed — or while a dependency
+failed to load, or while an online catalogue was rate-limited — stays blank
+forever however well the plugin works afterwards. The task walks `Book`,
+`AudioBook` and single-book `Folder` items that have no primary image, in
+libraries where SmartCovers is an enabled image fetcher, and refreshes each one's
+images (`ImageRefreshMode.FullRefresh`, metadata untouched, existing images kept).
+
+Whether SmartCovers is enabled for an item is answered by
+`IProviderManager.GetImageProviders(item, options)` rather than by reading
+`LibraryOptions` — that resolves the library's `ImageFetchers` and its fall back to
+the global metadata options exactly as a real refresh would, so there is no second
+copy of the rule to drift. Default trigger is daily at 04:00; it can also be run by
+hand from Dashboard -> Scheduled Tasks. Discovery is automatic: Jellyfin finds it
+via `GetExports<IScheduledTask>`, so it is NOT registered in
+`PluginServiceRegistrar` (registering it there would build a second instance).
 
 ### Extraction Pipeline
 
