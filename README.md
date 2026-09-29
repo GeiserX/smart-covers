@@ -9,10 +9,7 @@
 <p align="center">
   <a href="https://github.com/GeiserX/smart-covers/releases/latest"><img src="https://img.shields.io/github/v/release/GeiserX/smart-covers?style=flat-square&color=6B4C9A" alt="Latest Release"/></a>
   <a href="https://github.com/GeiserX/smart-covers/actions/workflows/build.yml"><img src="https://img.shields.io/github/actions/workflow/status/GeiserX/smart-covers/build.yml?branch=main&style=flat-square&label=tests" alt="Tests"/></a>
-  <a href="https://github.com/GeiserX/smart-covers/actions"><img src="https://img.shields.io/github/actions/workflow/status/GeiserX/smart-covers/build.yml?branch=main&style=flat-square" alt="Build Status"/></a>
   <a href="https://github.com/GeiserX/smart-covers/blob/main/LICENSE"><img src="https://img.shields.io/github/license/GeiserX/smart-covers?style=flat-square&color=AA5CC3" alt="License"/></a>
-  <img src="https://img.shields.io/badge/Jellyfin-10.11%2B-6B4C9A?style=flat-square" alt="Jellyfin 10.11+"/>
-  <img src="https://img.shields.io/badge/.NET-9.0-512BD4?style=flat-square" alt=".NET 9.0"/>
   <a href="https://github.com/awesome-jellyfin/awesome-jellyfin#readme"><img src="https://img.shields.io/badge/listed%20on-awesome--jellyfin-00a4dc?style=flat-square&logo=jellyfin&logoColor=white" alt="listed on awesome-jellyfin"/></a>
   <a href="https://codecov.io/gh/GeiserX/smart-covers"><img src="https://codecov.io/gh/GeiserX/smart-covers/graph/badge.svg" alt="codecov"/></a>
 </p>
@@ -21,181 +18,31 @@
 
 A Jellyfin plugin that provides **cover-image extraction** for books, audiobooks, comics, magazines, and music libraries. It works alongside built-in providers as a safety net: when they fail to find a cover -- or crash on mislabeled embedded art -- SmartCovers steps in. As a final fallback, it can search **Open Library** and **Google Books** for cover images automatically.
 
-## Supported Formats
+## Features
 
-| Format | Type | Extraction Method |
-|--------|------|-------------------|
-| PDF | Book / Magazine / Comic | First-page rendering via built-in PDFium (no external tools needed) |
-| EPUB | Book | Archive introspection with 3-tier image search |
-| CBZ / CBR | Comic / Manga | First page in natural page order (built-in ZIP/RAR reading, no external tools) |
-| MP3 | Audiobook / Music | Embedded art via `ffmpeg` raw stream copy |
-| M4A / M4B | Audiobook / Music | Embedded art via `ffmpeg` raw stream copy |
-| FLAC | Audiobook / Music | Embedded art via `ffmpeg` raw stream copy |
-| OGG / Opus | Audiobook / Music | Embedded art via `ffmpeg` raw stream copy |
-| WMA | Audiobook / Music | Embedded art via `ffmpeg` raw stream copy |
-| AAC | Audiobook / Music | Embedded art via `ffmpeg` raw stream copy |
-| WAV | Audiobook / Music | Embedded art via `ffmpeg` raw stream copy |
-| Folder | Audiobook | Sidecar image lookup, then first-file embedded art |
-| Any | All | Online fallback via Open Library and Google Books |
+- **PDF**: first-page rendering with a bundled PDFium library, no external tools.
+- **EPUB**: a 3-tier archive search (by filename, by path, by size).
+- **CBZ / CBR**: the first page in natural order, detected by content rather than extension, RAR4 and RAR5 included.
+- **Audio** (MP3, M4A/M4B, FLAC, OGG/Opus, WMA, AAC, WAV): embedded art by raw `ffmpeg` stream copy and magic-byte detection, so mislabeled art still works.
+- **Folder audiobooks**: sidecar images first, then the first file's embedded art, including multi-disc rips.
+- **Online fallback**: Open Library, then Google Books, with no API key.
+- A scheduled task that refreshes items still missing a cover.
+- Per-library enable/disable from the plugin settings page.
 
-## How It Works
+## Quick start
 
-### PDF -- First Page Rendering
-
-The plugin renders the first page of a PDF as a JPEG using a bundled PDFium native library (via the [PDFtoImage](https://www.nuget.org/packages/PDFtoImage) NuGet package). No external tools like `poppler-utils` or `pdftoppm` are required. DPI is configurable, and a per-render timeout prevents hangs on malformed files. The native library is included for Linux (x64, arm64, musl), macOS, and Windows.
-
-### EPUB -- 3-Tier Archive Search
-
-EPUBs are ZIP archives. When other plugins fail to extract a cover, SmartCovers opens the archive and searches with three strategies, in order:
-
-1. **By filename** -- files explicitly named `cover`, `portada`, `front`, `frontcover`, or `book_cover` (with any image extension).
-2. **By path** -- any image file with `cover` in its full archive path (e.g., `OEBPS/Images/cover-image.jpg`).
-3. **By size** -- the largest image in the archive (above 5 KB, to skip icons and logos).
-
-### CBZ / CBR -- Comic Archive First Page
-
-Comic archives are containers of page images: CBZ is a ZIP, CBR is a RAR. SmartCovers opens them with format detection based on the file **content, not the extension** -- mislabeled archives (a RAR renamed to `.cbz`, a ZIP renamed to `.cbr`) are common in the wild and still work. Both RAR4 and RAR5 are supported, including solid archives.
-
-Cover selection follows comic conventions:
-
-1. **Explicit cover entry** -- an image named `cover`, `portada`, `front`, `frontcover`, or `book_cover` anywhere in the archive wins.
-2. **First page in natural order** -- otherwise the first image page is the cover, using *natural sort* so `page-2.jpg` correctly precedes `page-10.jpg` (plain alphabetical order would not).
-
-macOS junk entries (`__MACOSX/`, AppleDouble `._*` files), hidden files, and tiny images (icons/thumbnails) are skipped, and every candidate is verified by magic bytes before being used -- an entry with an image extension but garbage content is passed over. Everything runs in-process; no external tools are required.
-
-### Audio -- Raw Stream Copy with Magic-Byte Detection
-
-Jellyfin's built-in Image Extractor uses ffmpeg to *decode* embedded artwork. This fails when the codec tag does not match the actual data -- a common problem in MP3 files where JPEG cover art is tagged as PNG in ID3 metadata.
-
-SmartCovers sidesteps this entirely by using `ffmpeg -vcodec copy` to **raw-copy** the embedded image stream without decoding. It then identifies the actual format by inspecting magic bytes:
-
-| Magic Bytes | Detected Format |
-|-------------|-----------------|
-| `FF D8 FF` | JPEG |
-| `89 50 4E 47` | PNG |
-| `47 49 46` | GIF |
-| `42 4D` | BMP |
-| `52 49 46 46 ... 57 45 42 50` | WebP |
-
-Any leading null/padding bytes injected by the raw stream copy are stripped automatically.
-
-### Folder-Based Audiobooks
-
-For multi-file audiobooks stored as a directory of chapter files, the plugin:
-
-1. Works out which folder names the book. A track is called `01` or `Pista 1`, which identifies nothing, so the folder name is used instead -- and for a multi-disc rip (`CD1`, `Disco 3`, `<title> CD 4`, or a bare number) the folder above the disc. It never climbs to the library root, and never treats a shelf of several books as one book.
-2. Checks for an image file in that folder: an exact `cover.jpg` / `folder.jpg` / `front.jpg` / `poster.jpg` / `thumb.jpg`, then any image whose name contains a cover word (`CoverArt.jpg`), then -- if the folder holds exactly one image -- that image.
-3. Falls back to embedded art from the first audio file, looking inside the first disc subfolder when the folder itself holds no audio.
-4. Remembers the result per book folder, hit or miss, so a hundred-track rip costs one lookup rather than a hundred.
-
-### Online Cover Fetching (Last Resort)
-
-When all local extraction methods fail, the plugin can search online sources for a matching cover:
-
-1. **Open Library** (openlibrary.org) -- searched first, using title and author metadata.
-2. **Google Books** (books.google.com) -- searched as a fallback, preferring the highest-resolution image available.
-3. If the author-qualified search finds nothing, the title alone is retried; then title and author swapped, since plenty of folders are named `<Author> - <Title>` and nothing in the name says which half is which; then the main title with its subtitle dropped, which is how catalogues index a title.
-
-A title that identifies nothing is never searched for. A numbered disc folder yields the title `2`, which matches hundreds of thousands of books -- the first one's cover would otherwise be shipped as yours. The subtitle retry is likewise limited to multi-word main titles.
-
-The plugin parses clean titles and authors from item metadata, stripping common audiobook filename noise (format tags like `(Mp3)`, locale tags like `[Castellano]`, Audible codes, year suffixes, and series indicators). No API keys are required. Fetched covers are cached by Jellyfin after the first scan, so online lookups only happen once per item.
-
-This feature is **enabled by default** and can be toggled in the plugin settings.
-
-### Refreshing Covers That Were Missed
-
-Jellyfin asks image providers for a cover once, when an item is new, and does not
-come back to a miss. So anything already in your library when you installed the
-plugin keeps its blank tile, however well the plugin works from then on -- and so
-does anything that was scanned while an online catalogue happened to be
-rate-limited.
-
-The plugin ships a scheduled task, **Refresh items missing a cover**, to close
-that gap. It finds books, audiobooks and audiobook folders with no primary image
-in the libraries where SmartCovers is enabled as an image fetcher, and refreshes
-their images -- metadata is left alone and any image you already have is kept. It
-runs daily at 04:00 by default, and you can run it on demand from **Dashboard ->
-Scheduled Tasks**, where its schedule can also be changed or the task disabled.
-
-## Installation
-
-### From Plugin Repository (Recommended)
-
-Add the following repository URL in **Dashboard > Plugins > Repositories**:
+Add this repository in **Dashboard > Plugins > Repositories**, install **SmartCovers** from the catalog, and restart Jellyfin (10.11 or newer):
 
 ```
 https://geiserx.github.io/smart-covers/manifest.json
 ```
 
-Then install **SmartCovers** from the plugin catalog and restart Jellyfin.
+## Documentation
 
-### From Releases
-
-1. Download `smart-covers_7.3.2.0.zip` from the [latest release](https://github.com/GeiserX/smart-covers/releases/latest).
-2. Extract the contents into your Jellyfin plugins directory:
-   ```text
-   <jellyfin-config>/plugins/SmartCovers_7.3.2.0/
-   ```
-   The zip contains `SmartCovers.dll` (with the CBZ/CBR archive reader merged in), `PDFtoImage.lib` (the PDFtoImage managed library, shipped with a `.lib` extension so Jellyfin's plugin scanner skips it), native PDFium libraries for all platforms under `runtimes/<rid>/native/`, and `THIRD-PARTY-NOTICES.md`.
-3. Restart Jellyfin.
-
-### Building from Source
-
-```bash
-dotnet publish SmartCovers/SmartCovers.csproj -c Release -o publish
-```
-
-The output will be in the `publish/` directory. Merge SharpCompress into the main assembly (`ilrepack /internalize /out:SmartCovers.dll publish/SmartCovers.dll publish/SharpCompress.dll` — a separate `SharpCompress.dll` makes Jellyfin 10.11 mark the plugin NotSupported, because nothing can resolve the reference during the plugin scan), then copy the merged `SmartCovers.dll`, the PDFtoImage managed library (renamed `PDFtoImage.dll` → `PDFtoImage.lib` so Jellyfin's plugin scanner skips it), and the `runtimes/` folder containing native PDFium libraries to your plugins directory.
-
-## Requirements
-
-| Dependency | Required For | Notes |
-|------------|-------------|-------|
-| Jellyfin 10.11+ | All features | Minimum supported server version |
-| `ffmpeg` | Audio covers | Bundled with Jellyfin Docker images |
-| [Bookshelf plugin](https://github.com/jellyfin/jellyfin-plugin-bookshelf) v13+ | EPUB covers | Recommended; handles standard EPUB covers as primary provider |
-
-PDF rendering requires no external dependencies -- the native PDFium library is bundled with the plugin for all platforms (Linux x64/arm64/musl, macOS x64/arm64, Windows x64/x86/arm64). CBZ/CBR extraction is pure managed code (SharpCompress, merged into `SmartCovers.dll`) and works everywhere with no external dependencies either.
-
-## Configuration
-
-After installation, configure the plugin in **Dashboard > SmartCovers** (appears in the sidebar):
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| Online Cover Fetching | Enabled | Search Open Library and Google Books when local extraction fails. No API key needed. |
-| DPI | 150 | Resolution for PDF first-page rendering. Higher values produce sharper covers at the cost of speed. |
-| Timeout | 30 s | Maximum time allowed per extraction. Applies to both PDF rendering and `ffmpeg`. |
-
-### Per-Library Enable/Disable
-
-The plugin settings page includes a **Libraries** section where you can enable or disable SmartCovers for each library directly -- no need to navigate to individual library settings. A **Refresh Images** button is available for enabled libraries.
-
-## Troubleshooting
-
-**PDF covers are not extracted**
-- Check the plugin config page -- it shows whether the PDFium native library loaded successfully.
-- Grep the Jellyfin log for `pdfium native library`. On success it logs `pdfium native library loaded — PDF cover extraction enabled`; if the bundled native cannot load on this host it logs `pdfium native library not available — PDF cover extraction disabled` and PDF cover extraction is disabled while all other features keep working.
-
-**Audio covers are not extracted**
-- Confirm `ffmpeg` is available: run `which ffmpeg` inside the container.
-- Check the Jellyfin log for `ffmpeg not found`.
-
-**Comic (CBZ/CBR) covers are not extracted**
-- Grep the Jellyfin log for `Failed to extract comic cover` -- corrupt archives are skipped (the online fallback still applies).
-- Archives whose images are all smaller than 1 KB, or that contain no image entries at all, produce no cover by design.
-
-**Covers appear for some items but not others**
-- The plugin only acts as a fallback. If a higher-priority provider already supplied a cover, this plugin will not run.
-- To force re-extraction, delete the existing cover image for the item in Jellyfin and rescan the library.
-
-**Extracted cover looks corrupted**
-- This is rare but can happen if the embedded art stream contains unusual padding. Open an issue with the file format details and the Jellyfin log output.
-
-**Online covers are not being fetched**
-- Check that "Enable online cover fetching" is toggled on in the plugin settings.
-- Verify the Jellyfin server has outbound internet access (the plugin queries `openlibrary.org` and `googleapis.com`).
-- Items that already have a cover from a higher-priority provider will not trigger online fetching. Delete the existing cover and rescan to force it.
+- [How it works](docs/how-it-works.md): supported formats and the extraction method for each, online fetching, the refresh task
+- [Installation](docs/installation.md): plugin repository, release zip, building from source, requirements
+- [Configuration](docs/configuration.md): settings and per-library enable/disable
+- [Troubleshooting](docs/troubleshooting.md)
 
 ## Other Jellyfin Projects by GeiserX
 
