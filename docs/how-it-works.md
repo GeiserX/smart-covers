@@ -1,4 +1,4 @@
-# Supported formats and how they are handled
+# How it works
 
 ## Supported formats
 
