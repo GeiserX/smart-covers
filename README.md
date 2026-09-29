@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/banner.svg" alt="smart-covers banner" width="900"/>
+  <img src="docs/images/banner.svg" alt="smart-covers" width="900"/>
 </p>
 
 <p align="center">
@@ -39,18 +39,18 @@ https://geiserx.github.io/smart-covers/manifest.json
 
 ## Documentation
 
-- [How it works](docs/how-it-works.md): supported formats and the extraction method for each, online fetching, the refresh task
-- [Installation](docs/installation.md): plugin repository, release zip, building from source, requirements
+- [Getting started](docs/getting-started.md): plugin repository, release zip, building from source, requirements
 - [Configuration](docs/configuration.md): settings and per-library enable/disable
+- [How it works](docs/how-it-works.md): supported formats and the extraction method for each, online fetching, the refresh task
 - [Troubleshooting](docs/troubleshooting.md)
 
-## Other Jellyfin Projects by GeiserX
+## Related projects
 
 - [quality-gate](https://github.com/GeiserX/quality-gate) — Restrict users to specific media versions based on configurable path-based policies
 - [whisper-subs](https://github.com/GeiserX/whisper-subs) — Automatic subtitle generation using local AI models powered by whisper.cpp
-- [quality-gate-encoder](https://github.com/GeiserX/quality-gate-encoder) (formerly jellyfin-encoder) — Automatic 720p HEVC/AV1 transcoding service with hardware acceleration
+- [quality-gate-encoder](https://github.com/GeiserX/quality-gate-encoder) (formerly jellyfin-encoder) — Automatic 720p HEVC, H.264 or AV1 copies with hardware acceleration
 - [jellyfin-telegram-channel-sync](https://github.com/GeiserX/jellyfin-telegram-channel-sync) — Sync Jellyfin access with Telegram channel membership
 
 ## License
 
-This project is licensed under the [GNU General Public License v3.0](LICENSE). Bundled third-party components are listed in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+[GPL-3.0-or-later](LICENSE). Bundled third-party components are listed in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
