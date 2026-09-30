@@ -204,7 +204,7 @@ jobs:
         run: |
           # Printed for the manual manifest.json update after release — the
           # catalog manifest is the committed manifest.json, published to Pages
-          # by pages.yml (NOT regenerated here). See CLAUDE.md "Release process".
+          # by docs.yml (NOT regenerated here). See CLAUDE.md "Release process".
           CHECKSUM=$(md5sum smart-covers_${{ steps.version.outputs.version }}.zip | cut -d ' ' -f 1)
           echo "MD5 of smart-covers_${{ steps.version.outputs.version }}.zip: \`$CHECKSUM\`" >> "$GITHUB_STEP_SUMMARY"
           echo "MD5 of smart-covers_${{ steps.version.outputs.version }}.zip: $CHECKSUM"
