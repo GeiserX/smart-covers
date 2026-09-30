@@ -9,3 +9,6 @@ obj/
 # OMC runtime state + test artifacts
 .omc/
 SmartCovers.Tests/TestResults/
+
+# MkDocs build output
+site/

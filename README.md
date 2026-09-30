@@ -41,14 +41,15 @@
 
 2. Open **Dashboard > SmartCovers**, click **Enable** on each library you want covered, then **Refresh Images**. The plugin is off on every library until you do this, including libraries you create later.
 
-It worked when the SmartCovers page shows three green lines (PDF rendering, ffmpeg, online fetching) and covers appear on the tiles as the refresh runs. Books and audiobooks still blank afterwards are retried every night at 04:00 by the **Refresh items missing a cover** task. The release zip and building from source are in [Getting started](docs/getting-started.md).
+It worked when the SmartCovers page shows three green lines (PDF rendering, ffmpeg, online fetching) and covers appear on the tiles as the refresh runs. Books and audiobooks still blank afterwards are retried every night at 04:00 by the **Refresh items missing a cover** task. The release zip is in [Getting started](https://geiserx.github.io/smart-covers/getting-started/#from-releases); building from source is in [Development](https://geiserx.github.io/smart-covers/development/).
 
 ## Documentation
 
-- [Getting started](docs/getting-started.md): catalog install, the release zip, building from source, requirements, turning it on, checking that it works
-- [Configuration](docs/configuration.md): the settings page, every setting and its default, per-library enable and refresh
-- [How it works](docs/how-it-works.md): how each format is read, the online lookup, the daily task
-- [Troubleshooting](docs/troubleshooting.md): installed but nothing changed, covers missing for one format, reporting a bug
+- [Getting started](https://geiserx.github.io/smart-covers/getting-started/): catalog install, the release zip, requirements, turning it on, checking that it works
+- [Configuration](https://geiserx.github.io/smart-covers/configuration/): the settings page, every setting and its default, per-library enable and refresh
+- [How it works](https://geiserx.github.io/smart-covers/how-it-works/): how each format is read, the online lookup, the daily task
+- [Troubleshooting](https://geiserx.github.io/smart-covers/troubleshooting/): installed but nothing changed, covers missing for one format, reporting a bug
+- [Development](https://geiserx.github.io/smart-covers/development/): building from source, tests, what ships in the zip, the release process
 
 ## Related projects
 

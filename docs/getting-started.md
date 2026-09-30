@@ -20,14 +20,6 @@ Then install **SmartCovers** from the plugin catalog and restart Jellyfin.
    The zip contains `SmartCovers.dll` (with the CBZ/CBR archive reader merged in), `PDFtoImage.lib` (the PDFtoImage managed library, shipped with a `.lib` extension so Jellyfin's plugin scanner skips it), native PDFium libraries for all platforms under `runtimes/<rid>/native/`, and `THIRD-PARTY-NOTICES.md`.
 3. Restart Jellyfin.
 
-## Building from Source
-
-```bash
-dotnet publish SmartCovers/SmartCovers.csproj -c Release -o publish
-```
-
-The plugin targets .NET 9.0. The output will be in the `publish/` directory. Merge SharpCompress into the main assembly (`ilrepack /internalize /out:SmartCovers.dll publish/SmartCovers.dll publish/SharpCompress.dll` — a separate `SharpCompress.dll` makes Jellyfin 10.11 mark the plugin NotSupported, because nothing can resolve the reference during the plugin scan), then copy the merged `SmartCovers.dll`, the PDFtoImage managed library (renamed `PDFtoImage.dll` → `PDFtoImage.lib` so Jellyfin's plugin scanner skips it), and the `runtimes/` folder containing native PDFium libraries to your plugins directory.
-
 ## Turn it on per library
 
 Jellyfin does not switch a new image fetcher on by itself, and a library you created before the install keeps its
