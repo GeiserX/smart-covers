@@ -25,7 +25,7 @@
 - PDFs get a cover from their first page, rendered by a bundled PDFium; nothing to install on the server.
 - EPUBs whose cover Jellyfin or Bookshelf misses still get one: the archive is searched by file name, then by path, then by the largest image.
 - MOBI and AZW books get the cover stored in the file.
-- CBZ and CBR comics show their first page in natural page order, RAR4, RAR5 and solid archives included; a RAR renamed to `.cbz` still works.
+- CBZ and CBR comics show the image named as the cover, else their first page in natural page order, RAR4, RAR5 and solid archives included; a RAR renamed to `.cbz` still works.
 - Audiobooks and music (MP3, M4A/M4B, FLAC, OGG/Opus, WMA, AAC, WAV) show their embedded art, including art tagged with the wrong image format that Jellyfin's own extractor drops.
 - A folder audiobook gets one cover for the book: a sidecar image if there is one, else the first track's art, multi-disc rips included.
 - A file with no cover inside gets one from Open Library, then Google Books.
@@ -41,7 +41,7 @@
 
 2. Open **Dashboard > SmartCovers**, click **Enable** on each library you want covered, then **Refresh Images**. The plugin is off on every library until you do this, including libraries you create later.
 
-It worked when the SmartCovers page shows three green lines (PDF rendering, ffmpeg, online fetching) and covers appear on the tiles as the refresh runs. Whatever is still blank afterwards is retried every night at 04:00 by the **Refresh items missing a cover** task. The release zip and building from source are in [Getting started](docs/getting-started.md).
+It worked when the SmartCovers page shows three green lines (PDF rendering, ffmpeg, online fetching) and covers appear on the tiles as the refresh runs. Books and audiobooks still blank afterwards are retried every night at 04:00 by the **Refresh items missing a cover** task. The release zip and building from source are in [Getting started](docs/getting-started.md).
 
 ## Documentation
 

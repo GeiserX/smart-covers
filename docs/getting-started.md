@@ -41,8 +41,8 @@ The same switch is in each library's own settings under Image fetchers, as **Sma
 - The SmartCovers page shows three green lines: PDF rendering available, ffmpeg detected, online cover fetching
   enabled. An orange line names what is missing and every other format keeps working.
 - Covers appear on the tiles while the refresh runs. Open the library and reload after a minute.
-- Anything still blank is retried by **Refresh items missing a cover** (Dashboard > Scheduled Tasks, category
-  SmartCovers) every night at 04:00; run it by hand from that page to retry now.
+- Books and audiobooks still blank in enabled libraries are retried by **Refresh items missing a cover**
+  (Dashboard > Scheduled Tasks, category SmartCovers) every night at 04:00; run it by hand from that page to retry now.
 
 ## Requirements
 

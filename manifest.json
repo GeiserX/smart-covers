@@ -3,7 +3,7 @@
     "guid": "82eef869-3f18-4678-968d-06efc10b60cf",
     "name": "SmartCovers",
     "overview": "Cover extraction for books, audiobooks, comics, and music — with online fallback via Open Library & Google Books.",
-    "description": "Cover provider for Jellyfin libraries. Renders PDF first pages with a built-in PDFium, extracts the first page of CBZ and CBR comics, finds the cover inside EPUB and MOBI files, and pulls embedded artwork from audio files and folder audiobooks with ffmpeg. When the file has no cover, fetches one from Open Library and then Google Books. No external tools needed.",
+    "description": "Cover provider for Jellyfin libraries. Renders PDF first pages with a built-in PDFium, takes the image named as the cover, else the first page, of CBZ and CBR comics, finds the cover inside EPUB and MOBI files, and pulls embedded artwork from audio files and folder audiobooks with Jellyfin's ffmpeg. When the file has no cover and online fetching is on (the default), fetches one from Open Library and then Google Books.",
     "owner": "GeiserX",
     "category": "General",
     "imageUrl": "https://raw.githubusercontent.com/GeiserX/smart-covers/main/docs/images/icon.png",

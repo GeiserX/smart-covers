@@ -7,7 +7,7 @@
 | PDF | Book / Magazine / Comic | First-page rendering via built-in PDFium (no external tools needed) |
 | EPUB | Book | Archive introspection with 3-tier image search |
 | MOBI / AZW / AZW3 | Book | Cover record named by the EXTH header (tag 201), else the first image records |
-| CBZ / CBR | Comic / Manga | First page in natural page order (built-in ZIP/RAR reading, no external tools) |
+| CBZ / CBR | Comic / Manga | Image named as the cover, else the first page in natural page order (built-in ZIP/RAR reading, no external tools) |
 | MP3 | Audiobook / Music | Embedded art via `ffmpeg` raw stream copy |
 | M4A / M4B | Audiobook / Music | Embedded art via `ffmpeg` raw stream copy |
 | FLAC | Audiobook / Music | Embedded art via `ffmpeg` raw stream copy |
