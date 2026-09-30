@@ -50,14 +50,33 @@ jobs:
           cp manifest.json _site/manifest.json
           # Serve files verbatim (no Jekyll processing of the repo).
           touch _site/.nojekyll
+          mkdir -p _site/images
+          cp docs/images/banner.svg _site/images/banner.svg
+          cp docs/images/icon.svg _site/images/icon.svg
           cat > _site/index.html << 'HTML'
           <!doctype html>
+          <html lang="en">
           <meta charset="utf-8">
-          <title>SmartCovers — Jellyfin plugin catalog</title>
-          <p>This is the SmartCovers plugin repository manifest for Jellyfin.</p>
-          <p>Add this URL under <strong>Dashboard → Plugins → Repositories</strong>:
-          <code>https://geiserx.github.io/smart-covers/manifest.json</code></p>
-          <p>Project: <a href="https://github.com/GeiserX/smart-covers">github.com/GeiserX/smart-covers</a></p>
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <title>smart-covers: Jellyfin plugin catalog</title>
+          <link rel="icon" href="images/icon.svg">
+          <style>
+            body { margin: 0; background: #1d1428; color: #f3ead8; font: 17px/1.5 system-ui, sans-serif; }
+            main { max-width: 900px; margin: 0 auto; padding: 32px 20px 64px; }
+            img { width: 100%; height: auto; display: block; border-radius: 18px; }
+            code { display: block; margin: 8px 0 20px; padding: 14px 16px; background: #2a1e3a; color: #fff;
+                   border-radius: 8px; font-size: 16px; overflow-x: auto; user-select: all; }
+            a { color: #c7b6d6; }
+          </style>
+          <main>
+            <img src="images/banner.svg" alt="smart-covers">
+            <p>Every book, comic and audiobook in Jellyfin gets a cover. Add this catalog under
+               <strong>Dashboard &gt; Plugins &gt; Repositories</strong>, then install <strong>SmartCovers</strong>:</p>
+            <code>https://geiserx.github.io/smart-covers/manifest.json</code>
+            <p>Install steps, settings and troubleshooting:
+               <a href="https://github.com/GeiserX/smart-covers#readme">github.com/GeiserX/smart-covers</a></p>
+          </main>
+          </html>
           HTML
 
       - uses: actions/configure-pages@v6
