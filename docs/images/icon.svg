@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="smart-covers">
+  <!-- Favicon and catalog tile: the logo.svg book on the banner's dark plate. -->
+  <defs><clipPath id="panel"><rect x="22" y="62" width="200" height="196"/></clipPath></defs>
+  <rect width="128" height="128" rx="28" fill="#1d1428"/>
+  <g transform="translate(30 18) scale(0.28)">
+    <rect x="10" y="6" width="236" height="292" rx="4" fill="#f3ead8"/>
+    <path d="M237 12v280M240 12v280M243 12v280" stroke="#d8cbb0" stroke-width="1.5"/>
+    <path d="M34 296v34l12-8 12 8v-34z" fill="#ffd166"/>
+    <rect width="236" height="300" rx="6" fill="#1f2a44"/>
+    <rect width="16" height="300" rx="4" fill="#151d31"/>
+    <rect x="22" y="14" width="200" height="42" fill="#e76f51"/>
+    <g clip-path="url(#panel)">
+      <rect x="22" y="62" width="200" height="196" fill="#f3ead8"/>
+      <path d="M108 120L360 183M108 120L366 152M108 120L368 120M108 120L366 88M108 120L360 57M108 120L351 27M108 120L338 -2M108 120L321 -29M108 120L-94 -44M108 120L-112 -18M108 120L-128 10M108 120L-139 40M108 120L-147 70M108 120L-151 102M108 120L-152 134M108 120L-148 165" stroke="#1f2a44" stroke-width="2.5"/>
+      <path d="M108 120L230 88L230 150Z" fill="#e76f51" opacity=".85"/>
+      <path d="M22 214Q60 206 100 212T180 210T240 212V260H22Z" fill="#1f2a44"/>
+      <path d="M34 226q10-6 20 0M78 238q10-6 20 0M130 228q10-6 20 0M170 244q10-6 20 0M52 250q10-6 20 0M186 222q10-6 20 0" fill="none" stroke="#f3ead8" stroke-width="2.5" stroke-linecap="round"/>
+      <path d="M70 222Q78 198 100 196Q124 190 140 204Q152 212 150 224Z" fill="#1f2a44"/>
+      <path d="M94 200L100 134H116L122 200Z" fill="#f3ead8" stroke="#1f2a44" stroke-width="3"/>
+      <path d="M96.4 172.6L98 154H118L119.6 172.6ZM95.2 186.3H120.8L122 200H94Z" fill="#e76f51"/>
+      <path d="M94 200L100 134H116L122 200Z" fill="none" stroke="#1f2a44" stroke-width="3"/>
+      <rect x="94" y="128" width="28" height="7" fill="#1f2a44"/>
+      <rect x="100" y="112" width="16" height="16" fill="#ffd166" stroke="#1f2a44" stroke-width="3"/>
+      <path d="M97 113L108 100L119 113Z" fill="#e76f51" stroke="#1f2a44" stroke-width="3" stroke-linejoin="round"/>
+    </g>
+    <rect x="22" y="62" width="200" height="196" fill="none" stroke="#f3ead8" stroke-width="2"/>
+  </g>
+</svg>
