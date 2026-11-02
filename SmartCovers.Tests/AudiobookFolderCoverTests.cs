@@ -199,7 +199,7 @@ public class AudiobookFolderCoverTests : IDisposable
     }
 
     [Fact]
-    public async Task ATvSeasonFolder_IsNeverGivenABookCover()
+    public void ATvSeasonFolder_IsNeverGivenABookCover()
     {
         // A Season is a Folder full of episodes: no subfolders and no book files,
         // so only the exact-type test in Supports keeps it out of the catalogue.
