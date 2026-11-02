@@ -268,7 +268,7 @@ public class RefreshMissingCoversTask : IScheduledTask, IConfigurableScheduledTa
         }
     }
 
-    private static string CountLabel(CandidateKind kind, int count) => kind switch
+    internal static string CountLabel(CandidateKind kind, int count) => kind switch
     {
         CandidateKind.Book => count == 1 ? "book" : $"{count} books",
         CandidateKind.Track => $"audiobook, {count} tracks",
@@ -277,7 +277,7 @@ public class RefreshMissingCoversTask : IScheduledTask, IConfigurableScheduledTa
         _ => count == 1 ? "music track" : $"{count} music tracks"
     };
 
-    private static string ReasonKey(CoverOutcome? outcome) => outcome?.Reason switch
+    internal static string ReasonKey(CoverOutcome? outcome) => outcome?.Reason switch
     {
         null => "provider not run",
         CoverReason.NoImageInFile => "no image in file",

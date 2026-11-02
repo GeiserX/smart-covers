@@ -334,6 +334,47 @@ public class RefreshMissingCoversTaskTests : IDisposable
     }
 
     [Fact]
+    public async Task Report_NamesADrawnCover_AndADrawnCoverARealOneReplaced()
+    {
+        SmartCoversIsEnabled();
+        _generatedCovers = true;
+        var upgraded = new Book
+        {
+            Id = Guid.NewGuid(),
+            Name = "Dizionario dei luoghi della Calabria",
+            ImageInfos = [new ItemImageInfo { Type = ImageType.Primary, Path = DrawnCoverFile() }]
+        };
+        var drawn = new Book { Id = Guid.NewGuid(), Name = "Archivística en Navarra", ImageInfos = [] };
+        var poster = Path.Combine(_tmpDir, "real.jpg");
+        File.WriteAllBytes(poster, [0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3]);
+        var drawnFile = DrawnCoverFile();
+
+        _library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns([upgraded, drawn]);
+        _providers
+            .Setup(p => p.RefreshSingleItem(It.IsAny<BaseItem>(), It.IsAny<MetadataRefreshOptions>(), It.IsAny<CancellationToken>()))
+            .Callback<BaseItem, MetadataRefreshOptions, CancellationToken>((item, _, _) =>
+            {
+                if (ReferenceEquals(item, upgraded))
+                {
+                    item.ImageInfos = [new ItemImageInfo { Type = ImageType.Primary, Path = poster }];
+                    _outcomes.Record(item.Id, new CoverOutcome(CoverReason.FoundOnline, item.Name, "Gustavo Valente", null, "Open Library"));
+                }
+                else
+                {
+                    item.ImageInfos = [new ItemImageInfo { Type = ImageType.Primary, Path = drawnFile }];
+                    _outcomes.Record(item.Id, new CoverOutcome(CoverReason.Generated, item.Name, "Juan José Martinena", null, null));
+                }
+            })
+            .ReturnsAsync(ItemUpdateType.ImageUpdate);
+
+        await CreateTask().ExecuteAsync(new Progress<double>(_ => { }), CancellationToken.None);
+
+        var lines = _log.Messages;
+        Assert.Contains(lines, l => l.Contains("Replaced the drawn cover of \"Dizionario dei luoghi della Calabria\" with a real one (Open Library)", StringComparison.Ordinal));
+        Assert.Contains(lines, l => l.Contains("Drew a cover for \"Archivística en Navarra\" by \"Juan José Martinena\" (book)", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void MovieFolder_IsNotACandidate()
     {
         SmartCoversIsEnabled();
@@ -436,6 +477,49 @@ public class RefreshMissingCoversTaskTests : IDisposable
         Assert.Contains(lines, l => l.Contains("Still without a cover, by reason: no online match 4, ", StringComparison.Ordinal)
             && l.Contains("network error 1", StringComparison.Ordinal)
             && l.Contains("provider not run 1", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(null, "provider not run")]
+    [InlineData("NoImageInFile", "no image in file")]
+    [InlineData("NoOnlineMatch", "no online match")]
+    [InlineData("UnsearchableTitle", "unsearchable title")]
+    [InlineData("NetworkError", "network error")]
+    [InlineData("OnlineDisabled", "online lookup off")]
+    [InlineData("NotOneBook", "not one book")]
+    [InlineData("NotBookLibrary", "not a book library")]
+    [InlineData("NoFont", "no font to draw a cover")]
+    [InlineData("KeptGenerated", "kept the drawn cover")]
+    [InlineData("FoundOnline", "cover not saved")]
+    public void EveryReason_HasItsOwnWordsInTheReport(string? reason, string expected)
+    {
+        var outcome = reason == null
+            ? null
+            : new CoverOutcome(Enum.Parse<CoverReason>(reason), "T", null, null, null);
+
+        Assert.Equal(expected, RefreshMissingCoversTask.ReasonKey(outcome));
+    }
+
+    [Theory]
+    [InlineData("Book", 1, "book")]
+    [InlineData("Book", 3, "3 books")]
+    [InlineData("Track", 12, "audiobook, 12 tracks")]
+    [InlineData("AudiobookFile", 1, "single-file audiobook")]
+    [InlineData("Folder", 1, "audiobook folder")]
+    [InlineData("Music", 1, "music track")]
+    [InlineData("Music", 8, "8 music tracks")]
+    public void CountLabel_NamesWhatWasCounted(string kind, int count, string expected)
+        => Assert.Equal(
+            expected,
+            RefreshMissingCoversTask.CountLabel(Enum.Parse<RefreshMissingCoversTask.CandidateKind>(kind), count));
+
+    [Fact]
+    public void Task_SaysWhatItDoes()
+    {
+        var task = CreateTask();
+
+        Assert.Equal("SmartCoversRefreshMissingCovers", task.Key);
+        Assert.Contains("audiobook", task.Description, StringComparison.Ordinal);
     }
 }
 

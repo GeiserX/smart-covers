@@ -416,4 +416,49 @@ public class OnlineLookupTests
 
         Assert.True(handler.RequestedUrls.Count(u => u.Contains("googleapis.com", StringComparison.Ordinal)) > 1);
     }
+
+    private static HttpResponseMessage NotJson() => new(HttpStatusCode.OK)
+    {
+        Content = new StringContent("<html>Service Unavailable</html>")
+    };
+
+    [Fact]
+    public async Task OpenLibraryUnreadableReply_IsANetworkError_SoTheNextRunTriesAgain()
+    {
+        var handler = new OrderedMockHandler();
+        handler.When(url => url.Contains("openlibrary.org/search", StringComparison.Ordinal), NotJson);
+        handler.WhenUrlContains("googleapis.com/books", new { totalItems = 0 });
+
+        var lookup = await Fetcher(handler).LookupAsync(new BookQuery("Archivística en Navarra", null, []), CancellationToken.None);
+
+        Assert.Null(lookup.Cover);
+        Assert.True(lookup.NetworkError);
+        Assert.Contains("Open Library: unreadable reply", lookup.Detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task GoogleBooksUnreadableReply_IsAMiss_NotACrash()
+    {
+        var handler = new OrderedMockHandler();
+        handler.When(url => url.Contains("googleapis.com/books", StringComparison.Ordinal), NotJson);
+        handler.WhenUrlContains("openlibrary.org/search", new { docs = Array.Empty<object>() });
+
+        var lookup = await Fetcher(handler).LookupAsync(new BookQuery("Archivística en Navarra", null, []), CancellationToken.None);
+
+        Assert.Null(lookup.Cover);
+        Assert.Contains(handler.RequestedUrls, u => u.Contains("googleapis.com/books", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task OpenLibraryTimeout_IsANetworkError()
+    {
+        var handler = new OrderedMockHandler();
+        handler.When(url => url.Contains("openlibrary.org", StringComparison.Ordinal), () => throw new TaskCanceledException("timeout"));
+        handler.WhenUrlContains("googleapis.com/books", new { totalItems = 0 });
+
+        var lookup = await Fetcher(handler).LookupAsync(new BookQuery("Archivística en Navarra", null, []), CancellationToken.None);
+
+        Assert.True(lookup.NetworkError);
+        Assert.Contains("Open Library: timed out", lookup.Detail, StringComparison.Ordinal);
+    }
 }

@@ -54,6 +54,36 @@ public class GeneratedCoverTests
         Assert.Equal(900, bitmap.Height);
     }
 
+    [Fact]
+    public void Render_WithNoFontGiven_FindsOneOnTheSystem()
+    {
+        // The path a live server takes: no font handed in, so the system lookup
+        // and then the known font files must find one.
+        if (TestFonts.Path == null)
+        {
+            return;
+        }
+
+        var bytes = GeneratedCover.Render("Archivística en Navarra", "Juan José Martinena", 85);
+
+        Assert.NotNull(bytes);
+        Assert.True(GeneratedCover.IsGenerated(bytes));
+    }
+
+    [Fact]
+    public void Render_TextNoFontCanDraw_GivesNothing()
+    {
+        // Private-use characters are in no font a server ships: the lookup must
+        // walk every fallback and give up cleanly rather than draw empty boxes.
+        var bytes = GeneratedCover.Render("\uE000\uE001\uE002", null, 85);
+
+        Assert.Null(bytes);
+    }
+
+    [Fact]
+    public void Render_BlankTitle_GivesNothing()
+        => Assert.Null(GeneratedCover.Render("   ", "Someone", 85, TestFonts.Path));
+
     private static MediaBrowser.Model.Drawing.ImageFormat? ImageFormatOf(byte[] bytes)
         => CoverImageProvider.DetectImageFormat(bytes).Format;
 
