@@ -16,7 +16,7 @@
 
 ---
 
-**smart-covers** is a Jellyfin plugin that gives a cover to the books, comics and audiobooks Jellyfin leaves blank. It takes the cover from the file itself (the first page of a PDF or comic, the cover image inside an EPUB or MOBI, the art embedded in an audio file), and when the file has none it asks Open Library and then Google Books, with no API key. It runs on Jellyfin 10.11 or newer and appears in the catalog and the dashboard as **SmartCovers**.
+**smart-covers** is a Jellyfin plugin that gives a cover to the books, comics and audiobooks Jellyfin leaves blank. It takes the cover from the file itself (the first page of a PDF or comic, the cover image inside an EPUB or MOBI, the art embedded in an audio file), and when the file has none it asks Open Library and then Google Books, no API key needed. It runs on Jellyfin 10.11 or newer and appears in the catalog and the dashboard as **SmartCovers**.
 
 <p align="center"><img src="docs/images/screenshots/library-before-after.png" alt="The same Jellyfin Books library twice: fifteen blank tiles before SmartCovers, and the same fifteen tiles each with a cover after it, from PDF first pages, EPUB and MOBI cover images and Open Library" width="900"></p>
 
@@ -27,9 +27,10 @@
 - MOBI and AZW books get the cover stored in the file.
 - CBZ and CBR comics show the image named as the cover, else their first page in natural page order, RAR4, RAR5 and solid archives included; a RAR renamed to `.cbz` still works.
 - Audiobooks and music (MP3, M4A/M4B, FLAC, OGG/Opus, WMA, AAC, WAV) show their embedded art, including art tagged with the wrong image format that Jellyfin's own extractor drops.
-- A folder audiobook gets one cover for the book: a sidecar image if there is one, else the first track's art, multi-disc rips included.
-- A file with no cover inside gets one from Open Library, then Google Books.
-- Anything missed at scan time is retried by a daily task, and the settings page turns the plugin on and refreshes images one library at a time.
+- A folder audiobook gets one cover for the book: a sidecar image if there is one, the folder's own Jellyfin poster, else the first track's art, multi-disc rips included.
+- A file with no cover inside gets one from Open Library, then Google Books, looked up by ISBN first and by the book's own title and author where the file has them. Anna's Archive names and translated titles are found too.
+- Books nobody has a cover for can get a plain drawn cover with the title and author (off by default), replaced as soon as a real one turns up.
+- Anything missed at scan time is retried by a daily task that logs why each book is still blank, and the settings page turns the plugin on and refreshes images one library at a time.
 
 ## Quick start
 
