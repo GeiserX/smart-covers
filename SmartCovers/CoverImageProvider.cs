@@ -1,15 +1,19 @@
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.IO.Compression;
+using Jellyfin.Data.Enums;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Audio;
+using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Drawing;
 using MediaBrowser.Model.Entities;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using PDFtoImage;
 using SharpCompress.Archives;
 using SkiaSharp;
+using SmartCovers.Configuration;
 
 namespace SmartCovers;
 
@@ -89,6 +93,12 @@ public class CoverImageProvider : IDynamicImageProvider
 
     private readonly ILogger<CoverImageProvider> _logger;
     private readonly OnlineCoverFetcher _onlineFetcher;
+    private readonly CoverOutcomeLog? _outcomes;
+    private readonly ILibraryManager? _libraryManager;
+    private readonly object _generatedLock = new();
+    private string? _generatedKey;
+    private byte[]? _generatedBytes;
+    private bool _noFontWarned;
     private readonly object _folderCoverLock = new();
     private readonly Dictionary<string, CachedCover> _folderCovers = new(StringComparer.OrdinalIgnoreCase);
     private readonly Queue<string> _folderCoverOrder = new();
@@ -101,8 +111,17 @@ public class CoverImageProvider : IDynamicImageProvider
     /// <summary>
     /// Initializes a new instance of the <see cref="CoverImageProvider"/> class.
     /// </summary>
-    public CoverImageProvider(ILogger<CoverImageProvider> logger, OnlineCoverFetcher onlineFetcher)
-        : this(logger, onlineFetcher, null)
+    /// <param name="logger">The logger.</param>
+    /// <param name="onlineFetcher">The online cover fetcher.</param>
+    /// <param name="outcomes">Where each request's outcome is left for the scheduled task.</param>
+    /// <param name="libraryManager">Jellyfin's library, to read a book folder's poster and a book's authors.</param>
+    [ActivatorUtilitiesConstructor]
+    public CoverImageProvider(
+        ILogger<CoverImageProvider> logger,
+        OnlineCoverFetcher onlineFetcher,
+        CoverOutcomeLog outcomes,
+        ILibraryManager libraryManager)
+        : this(logger, onlineFetcher, null, outcomes, libraryManager)
     {
     }
 
@@ -118,12 +137,29 @@ public class CoverImageProvider : IDynamicImageProvider
     /// A probe returning <see langword="true"/> when the pdfium native library is loadable.
     /// When <see langword="null"/>, the real <see cref="PdfiumNativeLibrary.TryLoad"/> probe is used.
     /// </param>
-    internal CoverImageProvider(ILogger<CoverImageProvider> logger, OnlineCoverFetcher onlineFetcher, Func<bool>? pdfiumNativeProbe)
+    /// <param name="outcomes">Where outcomes are recorded, or null.</param>
+    /// <param name="libraryManager">Jellyfin's library, or null when not wired up.</param>
+    internal CoverImageProvider(
+        ILogger<CoverImageProvider> logger,
+        OnlineCoverFetcher onlineFetcher,
+        Func<bool>? pdfiumNativeProbe = null,
+        CoverOutcomeLog? outcomes = null,
+        ILibraryManager? libraryManager = null)
     {
         _logger = logger;
         _onlineFetcher = onlineFetcher;
         _pdfiumNativeProbe = pdfiumNativeProbe ?? DefaultPdfiumNativeProbe;
+        _outcomes = outcomes;
+        _libraryManager = libraryManager;
     }
+
+    /// <summary>
+    /// Where the plugin settings come from. Tests replace it, so they never touch
+    /// the shared plugin instance.
+    /// </summary>
+    internal Func<PluginConfiguration?> ConfigurationSource { get; set; } = static () => Plugin.Instance?.Configuration;
+
+    private PluginConfiguration? Configuration => ConfigurationSource();
 
     /// <summary>
     /// The default pdfium availability probe: loads (and pins) the native via the shared
@@ -164,11 +200,32 @@ public class CoverImageProvider : IDynamicImageProvider
     /// <inheritdoc />
     public async Task<DynamicImageResponse> GetImage(BaseItem item, ImageType type, CancellationToken cancellationToken)
     {
+        var attempt = new CoverAttempt();
+        var result = await GetImageCore(item, attempt, cancellationToken).ConfigureAwait(false);
+
+        if (result.HasImage)
+        {
+            if (attempt.Reason is not (CoverReason.FoundOnline or CoverReason.InheritedFromFolder))
+            {
+                attempt.Reason = CoverReason.FoundInFile;
+            }
+        }
+        else
+        {
+            result = MaybeGenerate(item, attempt);
+        }
+
+        _outcomes?.Record(item.Id, attempt.ToOutcome());
+        return result;
+    }
+
+    private async Task<DynamicImageResponse> GetImageCore(BaseItem item, CoverAttempt attempt, CancellationToken cancellationToken)
+    {
         var path = item.Path;
 
         if (string.IsNullOrEmpty(path))
         {
-            return await GetOnlineCover(item, null, cancellationToken).ConfigureAwait(false);
+            return await GetOnlineCover(item, null, attempt, cancellationToken).ConfigureAwait(false);
         }
 
         var isDirectory = Directory.Exists(path);
@@ -176,9 +233,10 @@ public class CoverImageProvider : IDynamicImageProvider
         // A folder audiobook's identity is its folder name, never the track name
         // ("01", "Pista 1"). For a disc folder ("CD 3", "<title> CD 3") it is the
         // folder above. Null means the item has no single book folder.
+        var libraryRoot = GetLibraryRootPath(item);
         var identityDir = BookIdentity.ResolveIdentityDirectory(
             isDirectory ? path : Path.GetDirectoryName(path),
-            GetLibraryRootPath(item));
+            libraryRoot);
 
         if (isDirectory)
         {
@@ -187,10 +245,11 @@ public class CoverImageProvider : IDynamicImageProvider
             if (identityDir == null)
             {
                 _logger.LogDebug("Not a single-book folder, skipping: {Path}", path);
+                attempt.Reason = CoverReason.NotOneBook;
                 return new DynamicImageResponse { HasImage = false };
             }
 
-            return await GetBookFolderCover(identityDir, item, cancellationToken).ConfigureAwait(false);
+            return await GetBookFolderCover(identityDir, item, attempt, cancellationToken).ConfigureAwait(false);
         }
 
         DynamicImageResponse result;
@@ -235,18 +294,30 @@ public class CoverImageProvider : IDynamicImageProvider
         // or a .cbr IS its own book, and a folder can hold many of those.
         if (isTrack && identityDir != null && IsBookLike(item))
         {
-            return await GetBookFolderCover(identityDir, item, cancellationToken).ConfigureAwait(false);
+            return await GetBookFolderCover(identityDir, item, attempt, cancellationToken).ConfigureAwait(false);
         }
 
         // Final fallback: fetch the cover from online sources. Books and audiobooks
         // only — Open Library and Google Books are irrelevant for music.
         if (IsBookLike(item))
         {
-            return await GetOnlineCover(item, null, cancellationToken).ConfigureAwait(false);
+            return await GetOnlineCover(item, null, attempt, cancellationToken).ConfigureAwait(false);
+        }
+
+        // Music: never looked up online. A track that belongs to no album may get
+        // a drawn cover: a loose file in the library's top folder, or a track in a
+        // folder Jellyfin did not make an album because it collects songs of many
+        // albums ("WCYR-Base/Radiohead - Videotape.flac").
+        if (isTrack)
+        {
+            (attempt.Title, attempt.Author) = OnlineCoverFetcher.ParseMusicTrack(item);
+            attempt.LooseMusic = LibraryContext.IsSameDirectory(Path.GetDirectoryName(path), libraryRoot)
+                || IsInPlainFolder(item);
         }
 
         return result;
     }
+
 
     /// <summary>
     /// True for the item types an online book catalogue can answer for. Note that
@@ -257,46 +328,128 @@ public class CoverImageProvider : IDynamicImageProvider
         => item is Book || item is AudioBook || item.GetType() == typeof(Folder);
 
     /// <summary>
-    /// The library root this item belongs to, used as a hard ceiling on folder
-    /// climbing. Returns null when the item graph is not available (the library
-    /// manager is not wired up), in which case only the structural rules apply.
+    /// The library folder on disk this item belongs to, used as a hard ceiling on
+    /// folder climbing. Returns null when it cannot be resolved, in which case only
+    /// the structural rules apply.
     /// </summary>
-    private string? GetLibraryRootPath(BaseItem item)
+    private string? GetLibraryRootPath(BaseItem item) => LibraryContext.RootPath(item, _libraryManager);
+
+    private bool IsBookLibrary(BaseItem item) => LibraryContext.IsBookLibrary(item, _libraryManager);
+
+    /// <summary>
+    /// True when the item's parent is a plain folder, not a music album. An unknown
+    /// parent counts as an album, so nothing is drawn on a guess.
+    /// </summary>
+    private bool IsInPlainFolder(BaseItem item)
     {
+        if (_libraryManager == null || item.ParentId == Guid.Empty)
+        {
+            return false;
+        }
+
         try
         {
-            return item.GetTopParent()?.Path;
+            var parent = _libraryManager.GetItemById(item.ParentId);
+            return parent != null && parent.GetType() == typeof(Folder);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogDebug(ex, "Could not resolve the library root for {Path}", item.Path);
-            return null;
+            _logger.LogDebug(ex, "Could not read the parent of '{Name}'", item.Name);
+            return false;
         }
     }
 
     /// <summary>
-    /// The cover for one book folder: images on disk first, then online. Cached, so
-    /// the other ninety-nine tracks of the same book cost nothing.
+    /// The cover for one book folder: images on disk first, then the folder's own
+    /// Jellyfin poster, then online. Cached, so the other ninety-nine tracks of the
+    /// same book cost nothing.
     /// </summary>
     private async Task<DynamicImageResponse> GetBookFolderCover(
-        string identityDir, BaseItem item, CancellationToken cancellationToken)
+        string identityDir, BaseItem item, CoverAttempt attempt, CancellationToken cancellationToken)
     {
-        if (TryGetCachedCover(identityDir, out var cached))
+        if (TryGetCachedCover(identityDir, attempt, out var cached))
         {
             return cached;
         }
 
         var result = await GetFolderAudioCover(identityDir, cancellationToken).ConfigureAwait(false);
 
+        // Jellyfin often already holds a poster for the book folder (fetched or set
+        // by hand) but never hands it down to the tracks, so each track would show a
+        // blank tile. Take the folder's poster.
+        if (!result.HasImage)
+        {
+            result = await GetFolderItemPoster(identityDir, item, cancellationToken).ConfigureAwait(false);
+            if (result.HasImage)
+            {
+                attempt.Reason = CoverReason.InheritedFromFolder;
+            }
+        }
+
         // Only ask online for a folder that IS one book. A folder holding a stack of
         // PDFs or comics gets whatever image is already on disk and nothing more —
         // each of those files is its own book and carries its own cover.
-        if (!result.HasImage && IsBookLike(item) && RepresentsOneBook(identityDir))
+        if (!result.HasImage && IsBookLike(item))
         {
-            result = await GetOnlineCover(item, identityDir, cancellationToken).ConfigureAwait(false);
+            if (RepresentsOneBook(identityDir))
+            {
+                result = await GetOnlineCover(item, identityDir, attempt, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                attempt.Reason = CoverReason.NotOneBook;
+            }
         }
 
-        return StoreCover(identityDir, result);
+        // A catalogue that could not be reached proves nothing: ask again next time.
+        if (attempt.Reason == CoverReason.NetworkError)
+        {
+            return result;
+        }
+
+        return StoreCover(identityDir, result, attempt);
+    }
+
+    /// <summary>
+    /// The Primary image Jellyfin already holds for the book folder's own item,
+    /// when it is a local file and not a drawn cover.
+    /// </summary>
+    private async Task<DynamicImageResponse> GetFolderItemPoster(
+        string identityDir, BaseItem item, CancellationToken cancellationToken)
+    {
+        var noImage = new DynamicImageResponse { HasImage = false };
+        if (_libraryManager == null)
+        {
+            return noImage;
+        }
+
+        try
+        {
+            var folder = _libraryManager.FindByPath(identityDir, true);
+            if (folder == null || folder.Id == item.Id)
+            {
+                return noImage;
+            }
+
+            var poster = folder.GetImageInfo(ImageType.Primary, 0)?.Path;
+            if (string.IsNullOrEmpty(poster) || !File.Exists(poster))
+            {
+                return noImage;
+            }
+
+            var loaded = await LoadImageFile(poster, cancellationToken).ConfigureAwait(false);
+            if (loaded.HasImage)
+            {
+                _logger.LogDebug("Using the book folder's poster {Poster} for {Path}", poster, item.Path);
+            }
+
+            return loaded;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogDebug(ex, "Could not read the poster of {Path}", identityDir);
+            return noImage;
+        }
     }
 
     /// <summary>
@@ -342,12 +495,13 @@ public class CoverImageProvider : IDynamicImageProvider
             || string.Equals(extension, ".pdf", StringComparison.OrdinalIgnoreCase)
             || string.Equals(extension, ".epub", StringComparison.OrdinalIgnoreCase);
 
-    private bool TryGetCachedCover(string identityDir, out DynamicImageResponse response)
+    private bool TryGetCachedCover(string identityDir, CoverAttempt attempt, out DynamicImageResponse response)
     {
         lock (_folderCoverLock)
         {
             if (_folderCovers.TryGetValue(identityDir, out var entry))
             {
+                attempt.Restore(entry.Outcome);
                 response = entry.Data == null
                     ? new DynamicImageResponse { HasImage = false }
                     : new DynamicImageResponse
@@ -368,7 +522,7 @@ public class CoverImageProvider : IDynamicImageProvider
     /// Caches the folder's outcome and returns an equivalent response. The caller's
     /// stream is consumed, so a fresh one is handed back.
     /// </summary>
-    private DynamicImageResponse StoreCover(string identityDir, DynamicImageResponse result)
+    private DynamicImageResponse StoreCover(string identityDir, DynamicImageResponse result, CoverAttempt attempt)
     {
         byte[]? data = null;
 
@@ -391,7 +545,7 @@ public class CoverImageProvider : IDynamicImageProvider
 
         lock (_folderCoverLock)
         {
-            if (_folderCovers.TryAdd(identityDir, new CachedCover(data, result.Format)))
+            if (_folderCovers.TryAdd(identityDir, new CachedCover(data, result.Format, attempt.Snapshot())))
             {
                 _folderCoverOrder.Enqueue(identityDir);
                 while (_folderCoverOrder.Count > MaxCachedFolders)
@@ -404,7 +558,7 @@ public class CoverImageProvider : IDynamicImageProvider
         return result;
     }
 
-    private readonly record struct CachedCover(byte[]? Data, ImageFormat Format);
+    private readonly record struct CachedCover(byte[]? Data, ImageFormat Format, CoverAttempt Outcome);
 
     private async Task<DynamicImageResponse> GetEpubCover(string path, CancellationToken cancellationToken)
     {
@@ -1087,7 +1241,7 @@ public class CoverImageProvider : IDynamicImageProvider
                     if (File.Exists(candidate))
                     {
                         var bytes = await File.ReadAllBytesAsync(candidate, cancellationToken).ConfigureAwait(false);
-                        if (bytes.Length < 1000)
+                        if (bytes.Length < 1000 || GeneratedCover.IsGenerated(bytes))
                         {
                             continue;
                         }
@@ -1219,9 +1373,19 @@ public class CoverImageProvider : IDynamicImageProvider
             f => CoverNameHints.Any(h => Path.GetFileNameWithoutExtension(f)
                 .Contains(h, StringComparison.OrdinalIgnoreCase)));
 
+        // An image named after the book: "Cabo Trafalgar.jpg" in
+        // "[Audiolibro mp3]  Cabo Trafalgar- Arturo Pérez-Reverte 2004".
+        var folderName = Path.GetFileName(dirPath);
+        var bookNames = new[] { folderName, OnlineCoverFetcher.ParseName(folderName).Title }
+            .Where(n => !string.IsNullOrWhiteSpace(n))
+            .Select(n => BookNameParser.Fold(n.Trim()))
+            .ToHashSet(StringComparer.Ordinal);
+        var byTitle = images.FirstOrDefault(
+            f => bookNames.Contains(BookNameParser.Fold(Path.GetFileNameWithoutExtension(f).Trim())));
+
         var lone = images.Count == 1 ? images[0] : null;
 
-        foreach (var candidate in new[] { exact, byHint, lone })
+        foreach (var candidate in new[] { exact, byHint, byTitle, lone })
         {
             if (candidate == null)
             {
@@ -1246,7 +1410,9 @@ public class CoverImageProvider : IDynamicImageProvider
     private static async Task<DynamicImageResponse> LoadImageFile(string path, CancellationToken cancellationToken)
     {
         var bytes = await File.ReadAllBytesAsync(path, cancellationToken).ConfigureAwait(false);
-        if (bytes.Length < 1000)
+
+        // A drawn cover that Jellyfin saved beside the media is not a real one.
+        if (bytes.Length < 1000 || GeneratedCover.IsGenerated(bytes))
         {
             return new DynamicImageResponse { HasImage = false };
         }
@@ -1316,51 +1482,283 @@ public class CoverImageProvider : IDynamicImageProvider
     /// <param name="identityDir">
     /// The book folder to take the title from, or null to use the item's own name.
     /// </param>
+    /// <param name="attempt">Where the outcome is written.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     private async Task<DynamicImageResponse> GetOnlineCover(
-        BaseItem item, string? identityDir, CancellationToken cancellationToken)
+        BaseItem item, string? identityDir, CoverAttempt attempt, CancellationToken cancellationToken)
     {
-        var config = Plugin.Instance?.Configuration;
-        if (config?.EnableOnlineCoverFetch != true)
+        var noImage = new DynamicImageResponse { HasImage = false };
+
+        BookQuery query;
+        try
         {
-            return new DynamicImageResponse { HasImage = false };
+            query = BuildQuery(item, identityDir, attempt);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogDebug(ex, "Could not work out the title of '{Name}'", item.Name);
+            attempt.Reason = CoverReason.UnsearchableTitle;
+            return noImage;
+        }
+
+        if (!IsBookLibrary(item))
+        {
+            attempt.Reason = CoverReason.NotBookLibrary;
+            return noImage;
+        }
+
+        if (Configuration?.EnableOnlineCoverFetch != true)
+        {
+            attempt.Reason = CoverReason.OnlineDisabled;
+            return noImage;
+        }
+
+        if (!OnlineCoverFetcher.IsSearchableTitle(query.Title) && query.Isbns.Count == 0)
+        {
+            _logger.LogDebug("Skipping online lookup, '{Title}' is not a usable title", query.Title);
+            attempt.Reason = CoverReason.UnsearchableTitle;
+            return noImage;
         }
 
         try
         {
-            var (title, author) = OnlineCoverFetcher.ParseBookInfo(
-                item, identityDir == null ? null : Path.GetFileName(identityDir));
+            _logger.LogDebug("Attempting online cover fetch for: '{Title}' by '{Author}'", query.Title, query.Author ?? "(unknown)");
 
-            if (!OnlineCoverFetcher.IsSearchableTitle(title))
-            {
-                _logger.LogDebug("Skipping online lookup, '{Title}' is not a usable title", title);
-                return new DynamicImageResponse { HasImage = false };
-            }
-
-            _logger.LogDebug("Attempting online cover fetch for: '{Title}' by '{Author}'", title, author ?? "(unknown)");
-
-            var cover = await _onlineFetcher.FetchCoverAsync(title, author, cancellationToken).ConfigureAwait(false);
+            var lookup = await _onlineFetcher.LookupAsync(query, cancellationToken).ConfigureAwait(false);
 
             // Fallback: retry with OriginalTitle (often the English title for non-English libraries)
-            cover ??= await _onlineFetcher.FetchCoverByOriginalTitleAsync(item, cancellationToken).ConfigureAwait(false);
-
-            if (cover == null)
+            if (lookup.Cover == null && !lookup.NetworkError)
             {
-                _logger.LogDebug("No online cover found for '{Title}'", title);
-                return new DynamicImageResponse { HasImage = false };
+                var byOriginal = await _onlineFetcher.LookupByOriginalTitleAsync(item, query.Author, cancellationToken).ConfigureAwait(false);
+                if (byOriginal != null)
+                {
+                    lookup = byOriginal with { Detail = byOriginal.Detail ?? lookup.Detail };
+                }
             }
 
+            if (lookup.Cover == null)
+            {
+                attempt.Reason = lookup.NetworkError ? CoverReason.NetworkError : CoverReason.NoOnlineMatch;
+                attempt.Detail = lookup.Detail;
+                _logger.LogDebug("No online cover found for '{Title}': {Detail}", query.Title, lookup.Detail ?? "no match");
+                return noImage;
+            }
+
+            attempt.Reason = CoverReason.FoundOnline;
+            attempt.Source = lookup.Source;
             return new DynamicImageResponse
             {
                 HasImage = true,
-                Stream = cover.Value.Stream,
-                Format = cover.Value.Format
+                Stream = lookup.Cover.Value.Stream,
+                Format = lookup.Cover.Value.Format
             };
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogDebug(ex, "Online cover fetch failed for '{Name}'", item.Name);
-            return new DynamicImageResponse { HasImage = false };
+            attempt.Reason = CoverReason.NetworkError;
+            attempt.Detail = ex.Message;
+            return noImage;
+        }
+    }
+
+    /// <summary>
+    /// What to search for. The book's own metadata wins over its file name: an
+    /// EPUB's OPF title, author and ISBN, then the authors Jellyfin holds, then
+    /// whatever the name and tags say.
+    /// </summary>
+    internal BookQuery BuildQuery(BaseItem item, string? identityDir, CoverAttempt? attempt = null)
+    {
+        var query = OnlineCoverFetcher.ParseBookQuery(item, identityDir == null ? null : Path.GetFileName(identityDir));
+        string? displayTitle = null;
+
+        if (identityDir == null
+            && item.Path is { } path
+            && string.Equals(Path.GetExtension(path), ".epub", StringComparison.OrdinalIgnoreCase)
+            && EpubOpf.Read(path) is { } hints)
+        {
+            var opfTitle = hints.Title == null ? null : BookNameParser.OcrTag.Replace(hints.Title, string.Empty).Trim();
+            if (IsUsableOpfTitle(opfTitle))
+            {
+                displayTitle = opfTitle;
+                query = query with
+                {
+                    Title = OnlineCoverFetcher.CleanText(opfTitle!),
+                    Author = hints.Author ?? query.Author
+                };
+            }
+            else if (query.Author == null && hints.Author != null)
+            {
+                query = query with { Author = hints.Author };
+            }
+
+            if (hints.Isbns.Count > 0)
+            {
+                query = query with { Isbns = query.Isbns.Concat(hints.Isbns).Distinct(StringComparer.Ordinal).ToList() };
+            }
+        }
+
+        if (query.Author == null && item is Book)
+        {
+            query = query with { Author = AuthorFromPeople(item) };
+        }
+
+        if (attempt != null)
+        {
+            attempt.Title = query.Title;
+            attempt.DisplayTitle = displayTitle;
+            attempt.Author = query.Author;
+        }
+
+        return query;
+    }
+
+    private static bool IsUsableOpfTitle(string? title)
+        => OnlineCoverFetcher.IsSearchableTitle(title)
+            && !title!.Contains(" -- ", StringComparison.Ordinal)
+            && !string.Equals(title, "Unknown", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(title, "Untitled", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The first author Jellyfin holds for the item (from its metadata providers).
+    /// </summary>
+    private string? AuthorFromPeople(BaseItem item)
+    {
+        if (_libraryManager == null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return _libraryManager
+                .GetPeople(item)
+                .FirstOrDefault(p => p.Type == PersonKind.Author && !string.IsNullOrWhiteSpace(p.Name))
+                ?.Name;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogDebug(ex, "Could not read the authors of '{Name}'", item.Name);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Draws a plain title and author cover, when the setting is on and every real
+    /// source has definitely missed. Never after a network error (the next run may
+    /// find the real cover), never outside book libraries except for a music track
+    /// that belongs to no album, never over a real cover, and never again for an
+    /// item that already carries a drawn cover.
+    /// </summary>
+    private DynamicImageResponse MaybeGenerate(BaseItem item, CoverAttempt attempt)
+    {
+        var noImage = new DynamicImageResponse { HasImage = false };
+        var config = Configuration;
+        if (config?.EnableGeneratedCovers != true
+            || attempt.Reason is not (CoverReason.NoImageInFile or CoverReason.NoOnlineMatch or CoverReason.OnlineDisabled))
+        {
+            return noImage;
+        }
+
+        var title = attempt.DisplayTitle ?? attempt.Title;
+        if (!OnlineCoverFetcher.IsSearchableTitle(title))
+        {
+            return noImage;
+        }
+
+        var eligible = IsBookLike(item) ? IsBookLibrary(item) : attempt.LooseMusic;
+        if (!eligible)
+        {
+            return noImage;
+        }
+
+        // Jellyfin keeps an image no provider replaces, so returning nothing leaves
+        // the drawn cover in place without rewriting it every night.
+        var current = PrimaryImagePath(item);
+        if (GeneratedCover.IsGeneratedFile(current))
+        {
+            attempt.Reason = CoverReason.KeptGenerated;
+            return noImage;
+        }
+
+        // A real cover is never replaced by a drawn one. Jellyfin asks providers
+        // again when images are being replaced, and a cover fetched earlier by
+        // another provider is not one ours can find.
+        if (!string.IsNullOrEmpty(current))
+        {
+            return noImage;
+        }
+
+        var bytes = RenderGenerated(title!, attempt.Author, config.JpegQuality);
+        if (bytes == null)
+        {
+            attempt.Reason = CoverReason.NoFont;
+            if (!_noFontWarned)
+            {
+                _noFontWarned = true;
+                _logger.LogWarning("Cannot draw a cover: no font on this server can draw '{Title}'", title);
+            }
+
+            return noImage;
+        }
+
+        attempt.Reason = CoverReason.Generated;
+        return new DynamicImageResponse
+        {
+            HasImage = true,
+            Stream = new MemoryStream(bytes, writable: false),
+            Format = ImageFormat.Jpg
+        };
+    }
+
+    /// <summary>
+    /// Renders a drawn cover, reusing the last one: every track of a folder
+    /// audiobook asks for the same cover.
+    /// </summary>
+    private byte[]? RenderGenerated(string title, string? author, int jpegQuality)
+    {
+        var key = $"{title}\n{author}\n{jpegQuality}";
+        lock (_generatedLock)
+        {
+            if (_generatedBytes != null && string.Equals(_generatedKey, key, StringComparison.Ordinal))
+            {
+                return _generatedBytes;
+            }
+        }
+
+        var bytes = GeneratedCover.Render(title, author, jpegQuality, GeneratedFontPath);
+        if (bytes != null)
+        {
+            GeneratedRenderCount++;
+            lock (_generatedLock)
+            {
+                _generatedKey = key;
+                _generatedBytes = bytes;
+            }
+        }
+
+        return bytes;
+    }
+
+    /// <summary>
+    /// A font file for drawn covers instead of the system fonts. Tests only.
+    /// </summary>
+    internal string? GeneratedFontPath { get; set; }
+
+    /// <summary>
+    /// How many covers have been drawn (cache misses only). Tests only.
+    /// </summary>
+    internal int GeneratedRenderCount { get; private set; }
+
+    private static string? PrimaryImagePath(BaseItem item)
+    {
+        try
+        {
+            return item.GetImageInfo(ImageType.Primary, 0)?.Path;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return null;
         }
     }
 
@@ -1485,4 +1883,48 @@ public class CoverImageProvider : IDynamicImageProvider
 
         return _ffmpegPath;
     }
+}
+
+/// <summary>
+/// The outcome of one cover request as it is being worked out.
+/// </summary>
+internal sealed class CoverAttempt
+{
+    /// <summary>Gets or sets how the request ended so far.</summary>
+    public CoverReason Reason { get; set; } = CoverReason.NoImageInFile;
+
+    /// <summary>Gets or sets the title searched for.</summary>
+    public string? Title { get; set; }
+
+    /// <summary>Gets or sets the title to draw, when it differs from the searched one.</summary>
+    public string? DisplayTitle { get; set; }
+
+    /// <summary>Gets or sets the author.</summary>
+    public string? Author { get; set; }
+
+    /// <summary>Gets or sets what went wrong, for the log.</summary>
+    public string? Detail { get; set; }
+
+    /// <summary>Gets or sets the catalogue the cover came from.</summary>
+    public string? Source { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether this is a music file that belongs to no album.</summary>
+    public bool LooseMusic { get; set; }
+
+    /// <summary>A copy for the folder cache.</summary>
+    public CoverAttempt Snapshot() => (CoverAttempt)MemberwiseClone();
+
+    /// <summary>Takes the outcome cached for the book folder.</summary>
+    public void Restore(CoverAttempt cached)
+    {
+        Reason = cached.Reason;
+        Title = cached.Title;
+        DisplayTitle = cached.DisplayTitle;
+        Author = cached.Author;
+        Detail = cached.Detail;
+        Source = cached.Source;
+    }
+
+    /// <summary>The outcome as the scheduled task reads it.</summary>
+    public CoverOutcome ToOutcome() => new(Reason, DisplayTitle ?? Title, Author, Detail, Source);
 }

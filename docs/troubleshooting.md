@@ -26,6 +26,19 @@
 **Extracted cover looks corrupted**
 - This is rare but can happen if the embedded art stream contains unusual padding. Open an issue with the file format details and the Jellyfin log output.
 
+**Some books or audiobooks stay blank after the nightly task**
+- Read the task's log lines in **Dashboard > Scheduled Tasks** or the Jellyfin log: one line per book names the
+  reason (no online match, network error, unsearchable title, provider not run).
+- `no online match` means the catalogues answered and have no cover. Turn on **Draw a plain cover** to give those
+  items a title and author cover.
+- `network error` means a catalogue could not be reached or refused; the next run retries on its own.
+
+**Google Books never finds anything**
+- Grep the log for `Google Books refused a lookup`. Without an API key its shared quota is often used up, so every
+  request is refused. Add a Google Books API key in the settings.
+- `Google Books rejected the API key` means the key is wrong, or its Google Cloud project does not have the Books
+  API enabled. Fix the key in the settings; the pause lifts as soon as the key changes.
+
 **Online covers are not being fetched**
 - Check that "Enable online cover fetching" is toggled on in the plugin settings.
 - Verify the Jellyfin server has outbound internet access (the plugin queries `openlibrary.org` and `googleapis.com`).

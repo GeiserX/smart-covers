@@ -18,7 +18,7 @@ hide:
 
 ---
 
-**smart-covers** is a Jellyfin plugin that gives a cover to the books, comics and audiobooks Jellyfin leaves blank. It takes the cover from the file itself (the first page of a PDF or comic, the cover image inside an EPUB or MOBI, the art embedded in an audio file), and when the file has none it asks Open Library and then Google Books, with no API key. It appears in the catalog and the dashboard as **SmartCovers** and runs on Jellyfin 10.11 or newer. Start with [Getting started](getting-started.md), then [turn it on per library](getting-started.md#turn-it-on-per-library).
+**smart-covers** is a Jellyfin plugin that gives a cover to the books, comics and audiobooks Jellyfin leaves blank. It takes the cover from the file itself (the first page of a PDF or comic, the cover image inside an EPUB or MOBI, the art embedded in an audio file), and when the file has none it asks Open Library and then Google Books. No API key is required; an optional Google Books key avoids its shared quota. It appears in the catalog and the dashboard as **SmartCovers** and runs on Jellyfin 10.11 or newer. Start with [Getting started](getting-started.md), then [turn it on per library](getting-started.md#turn-it-on-per-library).
 
 Add this catalog under **Dashboard > Plugins > Repositories**, then install **SmartCovers** and restart Jellyfin:
 

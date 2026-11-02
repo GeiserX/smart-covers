@@ -599,11 +599,12 @@ public class HttpFetchTests
         var result = await fetcher.FetchCoverAsync("Very Obscure Book", "Unknown Author", CancellationToken.None);
         Assert.Null(result);
 
-        // OL+author, Google+author, OL no-author, Google no-author, then the same two
-        // again with title and author swapped = 6 searches.
+        // OL fields + OL free text (author checked) + Google with the author, OL and
+        // Google without it ("Very Obscure Book" is too short for an unchecked free-text
+        // search), then the swapped reading's three = 8 searches.
         var searchUrls = handler.RequestedUrls.Where(u =>
             u.Contains("openlibrary.org/search") || u.Contains("googleapis.com/books")).ToList();
-        Assert.Equal(6, searchUrls.Count);
+        Assert.Equal(8, searchUrls.Count);
     }
 
     [Fact]

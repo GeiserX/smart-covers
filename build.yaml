@@ -1,7 +1,7 @@
 ---
 name: "SmartCovers"
 guid: "82eef869-3f18-4678-968d-06efc10b60cf"
-version: "7.4.0.0"
+version: "7.5.0.0"
 targetAbi: "10.11.0.0"
 framework: "net9.0"
 overview: "Cover extraction for books, audiobooks, comics, and music — with online fallback via Open Library & Google Books"
@@ -26,6 +26,10 @@ artifacts:
 assemblies:
   - "SmartCovers.dll"
 changelog: >
+  v7.5.0: Tracks take their book folder's poster; ISBN-first lookup; Anna's Archive names,
+  EPUB OPF title/author and track tags; Open Library free-text search for translated titles;
+  optional Google Books API key; optional drawn title and author cover; nightly task logs
+  why each book is still blank.
   v6.0.0: Renamed to SmartCovers (Jellyfin branding compliance).
   v5.0.0: Renamed to Jelly Covers. New namespace, config page with native Jellyfin
   components, per-library enable/disable toggle, dashboard sidebar entry.

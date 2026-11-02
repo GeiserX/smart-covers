@@ -27,7 +27,7 @@ public class PluginServiceRegistrarTests
     }
 
     [Fact]
-    public void RegisterServices_RegistersExactlyTwoServices()
+    public void RegisterServices_RegistersExactlyThreeServices()
     {
         var registrar = new PluginServiceRegistrar();
         var services = new ServiceCollection();
@@ -35,6 +35,9 @@ public class PluginServiceRegistrarTests
 
         registrar.RegisterServices(services, appHost);
 
-        Assert.Equal(2, services.Count);
+        Assert.Equal(3, services.Count);
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(CoverOutcomeLog)
+            && sd.Lifetime == ServiceLifetime.Singleton);
     }
 }

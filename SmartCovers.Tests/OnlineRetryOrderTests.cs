@@ -33,6 +33,20 @@ internal sealed class OrderedMockHandler : HttpMessageHandler
         var query = ParseQuery(uri);
 
         if (uri.Host.Contains("openlibrary.org", StringComparison.Ordinal)
+            && uri.AbsolutePath.Contains("search", StringComparison.Ordinal)
+            && query.TryGetValue("q", out var freeText))
+        {
+            return $"OL q='{freeText}'";
+        }
+
+        if (uri.Host.Contains("openlibrary.org", StringComparison.Ordinal)
+            && uri.AbsolutePath.Contains("search", StringComparison.Ordinal)
+            && (query.TryGetValue("isbn", out var id) || query.TryGetValue("oclc", out id)))
+        {
+            return query.ContainsKey("isbn") ? $"OL isbn='{id}'" : $"OL oclc='{id}'";
+        }
+
+        if (uri.Host.Contains("openlibrary.org", StringComparison.Ordinal)
             && uri.AbsolutePath.Contains("search", StringComparison.Ordinal))
         {
             var title = query.GetValueOrDefault("title", string.Empty);
@@ -151,6 +165,7 @@ public class OnlineRetryOrderTests
         Assert.Equal(
             [
                 "OL title='Ana Ruiz' author='Quiet Harbour'",
+                "OL q='Ana Ruiz Quiet Harbour'",
                 "GB q='intitle:Ana Ruiz+inauthor:Quiet Harbour'",
                 "OL title='Ana Ruiz'",
                 "GB q='Ana Ruiz'",
@@ -170,11 +185,12 @@ public class OnlineRetryOrderTests
         Assert.NotNull(result);
         Assert.Equal(5000, result!.Value.Stream.Length);
 
-        // With no author there is nothing to retry without and nothing to swap, so
-        // the main-title query is the third and last thing asked.
+        // With no author there is nothing to retry without and nothing to swap. The
+        // long title earns one unchecked free-text search; then the main title.
         Assert.Equal(
             [
                 "OL title='Four Thousand Weeks: Time Management for Mortals'",
+                "OL q='Four Thousand Weeks: Time Management for Mortals'",
                 "GB q='Four Thousand Weeks: Time Management for Mortals'",
                 "OL title='Four Thousand Weeks'"
             ],

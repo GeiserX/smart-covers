@@ -52,7 +52,12 @@ Plugin.cs                            Entry point, IHasWebPages (config UI, sideb
 ├── MobiCoverExtractor.cs            MOBI/AZW cover from the PalmDB image records (EXTH tag 201)
 ├── NaturalStringComparer.cs         Digit-aware ordering (page-2 before page-10) for comic pages
 ├── CoverStatusController.cs         REST API: GET /SmartCovers/Status
-├── OnlineCoverFetcher.cs            Open Library + Google Books (last resort)
+├── OnlineCoverFetcher.cs            Open Library + Google Books (last resort): ISBN, fields, free text
+├── BookNameParser.cs                Anna's Archive names, ISBN checksums, author lists and tags
+├── EpubOpf.cs                       EPUB package document: title, creator, ISBNs
+├── GeneratedCover.cs                Drawn title+author cover (SkiaSharp locals only, see the GetTypes() trap)
+├── CoverOutcomeLog.cs               Per-item outcome the provider leaves for the scheduled task
+├── LibraryContext.cs                Library content type and physical root of an item
 ├── RefreshMissingCoversTask.cs      Scheduled task: retry items that still have no cover
 └── PluginServiceRegistrar.cs        Registers CoverImageProvider as singleton
 ```
@@ -86,7 +91,9 @@ For each `Book` or `AudioBook` item without a cover, Jellyfin calls `CoverImageP
 4. **Audio file** — `ffmpeg -vcodec copy` raw-copies embedded art stream. Format detected via magic bytes (JPEG, PNG, GIF, BMP, WebP), stripping leading null padding.
 5. **Audio sidecar** — Checks for `cover.jpg`, `folder.jpg`, `front.jpg`, `poster.jpg`, `thumb.jpg` next to the file.
 6. **Folder audiobook** — Sidecar images in directory, then embedded art from first audio file.
-7. **Online fallback** — Open Library (title + author) → Google Books → Open Library (title only).
+7. **Folder poster** — a track takes the Primary image Jellyfin already holds for its book folder (Jellyfin never hands it down).
+8. **Online fallback** — ISBN (name or EPUB OPF) → Open Library fields → Open Library free text (author-checked) → Google Books, per reading: (title, author), (title), swapped, main title.
+9. **Drawn cover** (`EnableGeneratedCovers`, off by default) — `GeneratedCover.cs`, only after a definite miss, never after a network error.
 
 Each method returns a `DynamicImageResponse` with a `MemoryStream`. One image at a time, typically under 1 MB.
 
@@ -98,7 +105,7 @@ Jellyfin's built-in Image Extractor uses ffmpeg to decode embedded artwork. This
 
 `OnlineCoverFetcher.ParseBookInfo()` cleans audiobook filenames — strips format tags `(Mp3)`, locale tags `[Castellano]`, Audible codes, year suffixes, series indicators. Extracts author from `(year, author)` pattern. Splits on last ` - ` for `Title - Author`.
 
-Search order: Open Library (title + author) → Google Books (highest resolution) → Open Library (title only). No API keys. Static `HttpClient` with `SocketsHttpHandler`, 15s timeout. Images <1000 bytes rejected as placeholders.
+Search order: Open Library (title + author) → Google Books (highest resolution) → Open Library (title only). No API keys. Static `HttpClient` with `SocketsHttpHandler`, 15s timeout. Images <1000 bytes rejected as placeholders. No API key required; an optional Google Books key avoids its shared quota.
 
 ## Configuration
 
@@ -110,6 +117,8 @@ Editable via **Dashboard → SmartCovers** (sidebar entry via `EnableInMainMenu 
 | `JpegQuality` | `int` | `85` | PDF JPEG output quality (1–100). Honored via `SKBitmap.Encode` during PDF rendering. |
 | `TimeoutSeconds` | `int` | `30` | Max time per PDF render / ffmpeg invocation |
 | `EnableOnlineCoverFetch` | `bool` | `true` | Online fallback via Open Library and Google Books |
+| `GoogleBooksApiKey` | `string` | `""` | Optional; keyless Google Books often answers 429 for every request (shared daily quota used up) |
+| `EnableGeneratedCovers` | `bool` | `false` | Draw a plain title and author cover when nothing real exists; marked so a real cover replaces it |
 
 ### Per-Library Toggle
 
@@ -221,6 +230,11 @@ Things discovered during development that save time and prevent mistakes:
 - **The meta.json `assemblies` whitelist controls scanning, not resolution**: non-whitelisted DLLs in the plugin folder are simply not loaded/`GetTypes()`-scanned at startup (the scan is what breaks on version-mismatched refs like SkiaSharp) but remain on disk and fully resolvable at runtime. **Exception:** PDFtoImage still ships renamed to `.lib` — the packaging step, `Plugin.cs` resolver, and README all assume that name today; retiring the rename is a known follow-up that must change all three together.
 - **The GetTypes() scan resolves compiler-generated FIELDS before any plugin code runs** — this is the `NotSupported` trap (bit v7.3.0.0/v7.3.1.0 on Jellyfin 10.11.11, issue #17 follow-up). Async state machines hoist locals into struct fields and cached lambdas become `<>c` fields, so a type like `IArchive`/`Comparison<IArchiveEntry>` used as an async local or static lambda puts the dependency into a *loadable type's field*, which `GetTypes()` must resolve at scan time — BEFORE `static Plugin()` registers any `Resolving` handler. PDFtoImage survives as a lazy dependency only because its types appear solely as locals in sync lambdas/methods (never generated-type fields). **Fix and policy: any managed dependency Jellyfin doesn't ship gets ILRepack-merged (`/internalize`) into SmartCovers.dll by the CI** — no external reference, no scan risk, no runtime resolution games; CI also re-runs the whole suite against the merged DLL with the dependency deleted as a regression gate.
 - **Jellyfin 10.11 ships NO SharpCompress** (verified: v10.11.11 tag's `Directory.Packages.props` and `MediaBrowser.Providers.csproj` have no reference; the live 10.11 server's binaries contain none). Master DOES pin SharpCompress (0.49.1) via MediaBrowser.Providers — a master-branch fact that must never be assumed for release-line servers. Bookshelf ships its own `SharpCompress.dll 0.38` inside its plugin folder (loaded into Bookshelf's own ALC — irrelevant to us since the merge).
+- **Jellyfin swallows provider exceptions and returns nothing to the caller** (`ItemImageProvider.RefreshFromProvider` counts a failure and logs it). The scheduled task therefore learns why an item stayed blank only through `CoverOutcomeLog`, a DI singleton the provider writes per item id. A `failed` counter around `RefreshSingleItem` can never be above 0.
+- **Keyless Google Books is dead in practice**: its shared anonymous project has a daily quota of 0, so every call answers 429 `RESOURCE_EXHAUSTED`. The fetcher pauses Google Books for 6 h after a 429/403 (or a 400 on a keyed request: key rejected) and logs one warning naming quota or key; a configured key lifts the pause.
+- **Open Library's covers host rate-limits lookups by ISBN/OCLC to about 100 per 5 min per IP** (`/b/isbn/`, `/b/oclc/`); lookups by cover id (`/b/id/`) are not limited that way. ISBN and OCLC therefore go through `search.json?isbn=`/`?oclc=` and the image through `/b/id/<cover_i>`. After a 429/403/5xx the fetcher stops asking Open Library for the rest of the lookup and pauses it for 5 min across items.
+- **Jellyfin enables SmartCovers for plain `Folder` items in every library** (no library has a Folder TypeOptions entry, and the global default does not disable it). Without the books-library guard (`LibraryContext.IsBookLibrary`) movie folders were sent to Open Library and queued by the nightly task (999 of 1490 candidates on one server).
+- **`BaseItem.GetTopParent()` is not virtual and walks the static `BaseItem.LibraryManager`**, so tests cannot fake it. Library kind and root come from the injected `ILibraryManager` (`GetContentType`, `GetCollectionFolders` → `CollectionFolder.PhysicalLocations`). A CollectionFolder's own `Path` is the virtual folder under the config dir, not the media path.
 - **RAR 7.x cannot author RAR4 archives** (creation removed; extraction still works). The RAR4 test fixture is hand-crafted by `SmartCovers.Tests/Fixtures/make-fixtures.py` (spec-conformant stored RAR 1.5-format blocks, verified with `unrar t`).
 
 ## ⚠️ Security Notice
