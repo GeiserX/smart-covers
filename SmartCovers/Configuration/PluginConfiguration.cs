@@ -26,4 +26,17 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Gets or sets a value indicating whether online cover fetching is enabled.
     /// </summary>
     public bool EnableOnlineCoverFetch { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets an optional Google Books API key. Without one Google Books often
+    /// refuses every lookup, because the shared keyless quota is used up.
+    /// </summary>
+    public string GoogleBooksApiKey { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether a plain title and author cover is
+    /// drawn for a book, audiobook or loose music file that has no real cover
+    /// anywhere. A drawn cover is replaced as soon as a real one turns up.
+    /// </summary>
+    public bool EnableGeneratedCovers { get; set; }
 }

@@ -12,6 +12,7 @@ public class PluginServiceRegistrar : IPluginServiceRegistrator
     /// <inheritdoc />
     public void RegisterServices(IServiceCollection serviceCollection, IServerApplicationHost applicationHost)
     {
+        serviceCollection.AddSingleton<CoverOutcomeLog>();
         serviceCollection.AddSingleton<OnlineCoverFetcher>();
         serviceCollection.AddSingleton<CoverImageProvider>();
     }
