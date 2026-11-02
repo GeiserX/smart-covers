@@ -31,8 +31,27 @@ internal static class BookNameParser
 
     private static readonly Regex OclcField = new(@"^oclc\s+(\d+)$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    // "Spain, 1989": the place and year of publication.
+    // "Spain, 1989": the place and year of publication. Never the first field: a
+    // title can read the same ("Berlín, 1945").
     private static readonly Regex PlaceYearField = new(@"^[^,]+,\s*\d{4}$", RegexOptions.Compiled);
+
+    // A volume after a dash belongs to the title: "Los Miserables - Tomo I".
+    private static readonly Regex VolumeTail = new(
+        @"^(?:tomo|tome|vol\.?|volume|volumen|libro|livre|parte|part|book|band)\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly Regex RomanNumeral = new(@"^[IVXLCDM]+$", RegexOptions.Compiled);
+
+    // The separators of a list of people: "A, B, and C", "A & B", "A y B".
+    private static readonly Regex NameListSeparator = new(
+        @"\s*[,;]\s*(?:(?:and|y|&)\s+)?|\s+(?:and|y|&)\s+",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    // Lower-case words a person's name may carry: "Juan de Goyeneche", "Ludwig van Beethoven".
+    private static readonly HashSet<string> NameParticles = new(StringComparer.Ordinal)
+    {
+        "de", "del", "la", "las", "los", "y", "da", "das", "do", "dos", "di", "van", "von", "der", "den", "le", "du", "of"
+    };
 
     /// <summary>
     /// The tag a text-only rebuild carries: "(texto OCR, HathiTrust)", "(text OCR)".
@@ -73,9 +92,10 @@ internal static class BookNameParser
         string? oclc = null;
         var kept = new List<string>();
 
-        foreach (var field in fields)
+        for (var index = 0; index < fields.Length; index++)
         {
-            if (Md5Field.IsMatch(field) || AnnasArchiveField.IsMatch(field) || PlaceYearField.IsMatch(field))
+            var field = fields[index];
+            if (Md5Field.IsMatch(field) || AnnasArchiveField.IsMatch(field) || (index > 0 && PlaceYearField.IsMatch(field)))
             {
                 continue;
             }
@@ -107,8 +127,8 @@ internal static class BookNameParser
             return false;
         }
 
-        var title = CleanAnnasTitle(kept[0]);
         var author = kept.Count > 1 ? CleanAnnasAuthor(kept[1]) : null;
+        var title = CleanAnnasTitle(kept[0], author);
 
         if (string.IsNullOrWhiteSpace(title))
         {
@@ -119,7 +139,7 @@ internal static class BookNameParser
         return true;
     }
 
-    private static string CleanAnnasTitle(string title)
+    private static string CleanAnnasTitle(string title, string? author)
     {
         title = OcrTag.Replace(title, string.Empty);
 
@@ -128,12 +148,14 @@ internal static class BookNameParser
 
         // An author that leaked into the title field after " - ":
         // "Archivística en Navarra - [Juan José Martinena Ruiz ___ et",
-        // "El arsenal de Cartagena en el siglo XVIII - María Teresa". A volume
-        // ("... - Tomo 05") has a number in it and stays.
+        // "El arsenal de Cartagena en el siglo XVIII - María Teresa". Only a tail
+        // that opens a bracket or repeats a name of the author field is cut; a
+        // subtitle ("Star Wars - Una Nueva Esperanza") or a volume ("... - Tomo I")
+        // stays.
         var dash = title.IndexOf(" - ", StringComparison.Ordinal);
         if (dash > 2
             && OnlineCoverFetcher.IsSearchableTitle(title[..dash])
-            && LooksLikeLeakedName(title[(dash + 3)..]))
+            && LooksLikeLeakedName(title[(dash + 3)..], author))
         {
             title = title[..dash];
         }
@@ -141,7 +163,7 @@ internal static class BookNameParser
         return title.Trim().TrimEnd('_', ',', ';', ':', ' ').Trim();
     }
 
-    private static bool LooksLikeLeakedName(string tail)
+    private static bool LooksLikeLeakedName(string tail, string? author)
     {
         tail = tail.Trim();
         if (tail.StartsWith('['))
@@ -150,9 +172,16 @@ internal static class BookNameParser
         }
 
         var words = tail.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        return words.Length is >= 1 and <= 4
-            && !tail.Any(char.IsDigit)
-            && words.All(w => char.IsUpper(w[0]));
+        if (words.Length is < 1 or > 4
+            || tail.Any(char.IsDigit)
+            || !words.All(w => char.IsUpper(w[0]))
+            || VolumeTail.IsMatch(tail)
+            || RomanNumeral.IsMatch(words[^1]))
+        {
+            return false;
+        }
+
+        return author != null && NameTokens(tail).Overlaps(NameTokens(author));
     }
 
     private static string CleanAnnasAuthor(string author)
@@ -269,7 +298,10 @@ internal static class BookNameParser
     }
 
     /// <summary>
-    /// True when the text reads as a list of people: "A, B, and C", "A &amp; B".
+    /// True when the text reads as a list of people: "Douglas Stone, Bruce Patton,
+    /// and Sheila Heen", "Eduardo Matos Moctezuma &amp; Luis Millones". Every part must
+    /// read as a full name (two to four capitalised words), so a title with a
+    /// comma or an ampersand ("Pride &amp; Prejudice", "Veni, vidi, vici") is not one.
     /// </summary>
     internal static bool LooksLikeAuthorList(string? text)
     {
@@ -278,9 +310,22 @@ internal static class BookNameParser
             return false;
         }
 
-        return text.Contains(", and ", StringComparison.OrdinalIgnoreCase)
-            || text.Contains(" & ", StringComparison.Ordinal)
-            || text.Count(c => c == ',') >= 2;
+        var parts = NameListSeparator.Split(text.Trim())
+            .Select(p => p.Trim())
+            .Where(p => p.Length > 0)
+            .ToList();
+
+        return parts.Count >= 2 && parts.All(LooksLikePersonName);
+    }
+
+    private static bool LooksLikePersonName(string text)
+    {
+        var words = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return words.Length is >= 2 and <= 4
+            && !text.Any(char.IsDigit)
+            && char.IsUpper(words[0][0])
+            && char.IsUpper(words[^1][0])
+            && words.All(w => char.IsUpper(w[0]) || NameParticles.Contains(w));
     }
 
     /// <summary>

@@ -36,6 +36,8 @@
 **Google Books never finds anything**
 - Grep the log for `Google Books refused a lookup`. Without an API key its shared quota is often used up, so every
   request is refused. Add a Google Books API key in the settings.
+- `Google Books rejected the API key` means the key is wrong, or its Google Cloud project does not have the Books
+  API enabled. Fix the key in the settings; the pause lifts as soon as the key changes.
 
 **Online covers are not being fetched**
 - Check that "Enable online cover fetching" is toggled on in the plugin settings.

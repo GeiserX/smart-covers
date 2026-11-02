@@ -92,11 +92,17 @@ public class OnlineCoverFetcher
 
     private static readonly TimeSpan GoogleBooksPause = TimeSpan.FromHours(6);
 
+    // Open Library limits each address to about 100 requests per 5 minutes on
+    // some endpoints; after a refusal, asking again sooner only gets refused again.
+    private static readonly TimeSpan OpenLibraryPause = TimeSpan.FromMinutes(5);
+
     private readonly ILogger<OnlineCoverFetcher> _logger;
     private readonly HttpClient _http;
     private readonly object _googlePauseLock = new();
     private DateTime _googlePausedUntil = DateTime.MinValue;
     private string _googlePausedKey = string.Empty;
+    private readonly object _openLibraryPauseLock = new();
+    private DateTime _openLibraryPausedUntil = DateTime.MinValue;
 
     /// <summary>
     /// Where the Google Books API key comes from. Tests replace it.
@@ -131,10 +137,16 @@ public class OnlineCoverFetcher
         {
             Timeout = TimeSpan.FromSeconds(15)
         };
-        client.DefaultRequestHeaders.UserAgent.ParseAdd(
-            "SmartCovers/5.0 (https://github.com/GeiserX/smart-covers)");
+        client.DefaultRequestHeaders.UserAgent.ParseAdd(UserAgent);
         return client;
     }
+
+    /// <summary>
+    /// The User-Agent sent to the catalogues: this build's version and where to
+    /// reach the project, so Open Library can tell which release is calling.
+    /// </summary>
+    internal static string UserAgent =>
+        $"SmartCovers/{typeof(OnlineCoverFetcher).Assembly.GetName().Version?.ToString() ?? "0"} (+https://github.com/GeiserX/smart-covers)";
 
     /// <summary>
     /// Extracts a clean title and optional author from the item's metadata.
@@ -191,10 +203,10 @@ public class OnlineCoverFetcher
 
         // A track's own tags name the book better than a folder name full of
         // "(mp3)" and years: Album is the book, the artist its author.
-        if (item is AudioBook track && TagTitle(track) is { } albumTitle)
+        if (item is AudioBook track && TagBook(track) is { } album)
         {
-            var tagAuthor = TagAuthor(track) ?? ParseName(raw, item).Author;
-            return new BookQuery(albumTitle, tagAuthor, isbns, fromFile?.Oclc);
+            var tagAuthor = TagAuthor(track) ?? album.Author ?? ParseName(raw, item).Author;
+            return new BookQuery(album.Title, tagAuthor, isbns, fromFile?.Oclc);
         }
 
         var (title, author) = ParseName(raw, item);
@@ -202,9 +214,10 @@ public class OnlineCoverFetcher
     }
 
     /// <summary>
-    /// The Album tag of a track, when it reads as a book title.
+    /// The book the Album tag of a track names, when it reads as a book title,
+    /// with the author it names too when it was copied from a folder name.
     /// </summary>
-    private static string? TagTitle(Audio track)
+    private static (string Title, string? Author)? TagBook(Audio track)
     {
         var album = track.Album;
         if (string.IsNullOrWhiteSpace(album) || BookIdentity.IsDiscFolderName(album))
@@ -212,8 +225,15 @@ public class OnlineCoverFetcher
             return null;
         }
 
-        var cleaned = CleanText(MediaExtensionSuffixRegex.Replace(album, string.Empty));
-        return IsSearchableTitle(cleaned) ? cleaned : null;
+        album = MediaExtensionSuffixRegex.Replace(album, string.Empty);
+
+        // An Album tag copied from the folder name ("Hacia la Fundación (mp3) -
+        // Isaac Asimov 1993") is read like that name. A plain tag is kept whole,
+        // so a subtitle after a dash ("Star Wars - Una Nueva Esperanza") stays.
+        var parsed = FormatTagRegex.IsMatch(album) || BracketFormatPrefixRegex.IsMatch(album)
+            ? ParseName(album)
+            : (CleanText(album), null);
+        return IsSearchableTitle(parsed.Title) ? parsed : null;
     }
 
     private static string? TagAuthor(Audio track)
@@ -336,8 +356,10 @@ public class OnlineCoverFetcher
     }
 
     /// <summary>
-    /// Title and artist of a music track, for a drawn cover only: tags when the
-    /// track has them, else "Artist - Title" from the name.
+    /// Title and artist of a music track, for a drawn cover only. A tagged track's
+    /// name is its Title tag, which may hold a dash of its own ("Bohemian Rhapsody
+    /// - Remastered 2011"), so it is kept whole and the artist comes from the tags.
+    /// Only an untagged file is read as "Artist - Title".
     /// </summary>
     internal static (string Title, string? Artist) ParseMusicTrack(BaseItem item)
     {
@@ -346,14 +368,20 @@ public class OnlineCoverFetcher
             : Path.GetFileNameWithoutExtension(item.Path ?? string.Empty);
         name = MediaExtensionSuffixRegex.Replace(name ?? string.Empty, string.Empty).Trim();
 
+        var artist = (item as IHasArtist)?.Artists?.FirstOrDefault(a => !string.IsNullOrWhiteSpace(a))
+            ?? (item as IHasAlbumArtist)?.AlbumArtists?.FirstOrDefault(a => !string.IsNullOrWhiteSpace(a));
+        if (artist != null)
+        {
+            return (name, artist.Trim());
+        }
+
         var dash = name.LastIndexOf(" - ", StringComparison.Ordinal);
         if (dash > 0 && dash < name.Length - 3)
         {
             return (name[(dash + 3)..].Trim(), name[..dash].Trim());
         }
 
-        var artist = item is IHasArtist hasArtist ? hasArtist.Artists?.FirstOrDefault(a => !string.IsNullOrWhiteSpace(a)) : null;
-        return (name, artist);
+        return (name, null);
     }
 
     /// <summary>
@@ -388,14 +416,13 @@ public class OnlineCoverFetcher
     {
         var ctx = new LookupContext();
 
+        // By ISBN or OCLC through the search API, then the cover by its id: the
+        // covers host limits lookups by ISBN or OCLC to about 100 per 5 minutes
+        // per address, lookups by cover id are not limited that way. The search
+        // also finds the work's cover when this edition has none of its own.
         foreach (var isbn in query.Isbns.Distinct(StringComparer.Ordinal))
         {
-            var byIsbn = await TryCoverUrlAsync(
-                $"https://covers.openlibrary.org/b/isbn/{isbn}-L.jpg?default=false",
-                $"Open Library (ISBN {isbn})",
-                CatalogueSource.OpenLibrary,
-                ctx,
-                cancellationToken).ConfigureAwait(false);
+            var byIsbn = await TryOpenLibrarySearchAsync($"isbn={isbn}", null, $"ISBN {isbn}", ctx, cancellationToken).ConfigureAwait(false);
             byIsbn ??= await TryGoogleBooksAsync($"isbn:{isbn}", $"isbn {isbn}", ctx, cancellationToken).ConfigureAwait(false);
             if (byIsbn != null)
             {
@@ -405,12 +432,8 @@ public class OnlineCoverFetcher
 
         if (!string.IsNullOrEmpty(query.Oclc))
         {
-            var byOclc = await TryCoverUrlAsync(
-                $"https://covers.openlibrary.org/b/oclc/{query.Oclc}-L.jpg?default=false",
-                $"Open Library (OCLC {query.Oclc})",
-                CatalogueSource.OpenLibrary,
-                ctx,
-                cancellationToken).ConfigureAwait(false);
+            var byOclc = await TryOpenLibrarySearchAsync(
+                $"oclc={Uri.EscapeDataString(query.Oclc)}", null, $"OCLC {query.Oclc}", ctx, cancellationToken).ConfigureAwait(false);
             if (byOclc != null)
             {
                 return ctx.Found(byOclc);
@@ -450,9 +473,10 @@ public class OnlineCoverFetcher
             attempts.Add((mainTitle, author));
         }
 
+        var authorKnown = !string.IsNullOrEmpty(author);
         foreach (var (attemptTitle, attemptAuthor) in attempts)
         {
-            var result = await TryAttemptAsync(attemptTitle, attemptAuthor, ctx, cancellationToken).ConfigureAwait(false);
+            var result = await TryAttemptAsync(attemptTitle, attemptAuthor, authorKnown, ctx, cancellationToken).ConfigureAwait(false);
             if (result != null)
             {
                 return ctx.Found(result);
@@ -466,8 +490,13 @@ public class OnlineCoverFetcher
     /// One reading of the book, asked three ways: Open Library's title and author
     /// fields, Open Library's free-text search, then Google Books.
     /// </summary>
+    /// <param name="title">The title to search.</param>
+    /// <param name="author">The author to search with, or null for a title-only search.</param>
+    /// <param name="authorKnown">Whether the book has a known author, even when this reading leaves it out.</param>
+    /// <param name="ctx">The lookup state.</param>
+    /// <param name="ct">The cancellation token.</param>
     private async Task<(MemoryStream Stream, ImageFormat Format)?> TryAttemptAsync(
-        string title, string? author, LookupContext ctx, CancellationToken ct)
+        string title, string? author, bool authorKnown, LookupContext ctx, CancellationToken ct)
     {
         var fields = $"title={Uri.EscapeDataString(title)}";
         if (!string.IsNullOrEmpty(author))
@@ -485,13 +514,16 @@ public class OnlineCoverFetcher
         // so "Hacia la Fundación" by Isaac Asimov finds nothing there while a
         // free-text search finds "Forward the Foundation". A free-text hit must name
         // our author, so a stranger's book with a similar title is never taken.
-        // Without an author, only a long title is specific enough to trust.
+        // The unchecked title-only search is for a book with no known author at
+        // all, and only for a long title: on the title-only retry of a book whose
+        // author we know, "Cuando se apagan las luces" alone took another author's
+        // book about cinema.
         if (!string.IsNullOrEmpty(author))
         {
             result = await TryOpenLibrarySearchAsync(
                 $"q={Uri.EscapeDataString($"{title} {author}")}", author, title, ctx, ct).ConfigureAwait(false);
         }
-        else if (BookNameParser.WordCount(title) >= MinFreeTextTitleWords)
+        else if (!authorKnown && BookNameParser.WordCount(title) >= MinFreeTextTitleWords)
         {
             result = await TryOpenLibrarySearchAsync(
                 $"q={Uri.EscapeDataString(title)}", null, title, ctx, ct).ConfigureAwait(false);
@@ -793,6 +825,16 @@ public class OnlineCoverFetcher
         string url, CatalogueSource source, LookupContext ctx, CancellationToken ct)
     {
         var name = source == CatalogueSource.OpenLibrary ? "Open Library" : "Google Books";
+
+        // Once Open Library has failed, the rest of this lookup cannot prove a miss
+        // anyway, and after a refusal every item is held back for a while: one
+        // throttle must not turn into hundreds more refused requests.
+        if (source == CatalogueSource.OpenLibrary && (ctx.NetworkError || IsOpenLibraryPaused()))
+        {
+            ctx.Fail(source, "Open Library: paused after it refused a request");
+            return null;
+        }
+
         try
         {
             using var response = await _http.GetAsync(url, ct).ConfigureAwait(false);
@@ -809,11 +851,22 @@ public class OnlineCoverFetcher
             }
 
             if (source == CatalogueSource.GoogleBooks
-                && (status == HttpStatusCode.TooManyRequests || status == HttpStatusCode.Forbidden))
+                && (status is HttpStatusCode.TooManyRequests or HttpStatusCode.Forbidden
+                    || (status == HttpStatusCode.BadRequest && url.Contains("&key=", StringComparison.Ordinal))))
             {
-                PauseGoogleBooks(status);
-                ctx.Note($"Google Books: {(int)status} {status}, quota exhausted");
+                var errorBody = await ReadErrorBodyAsync(response, ct).ConfigureAwait(false);
+                var keyProblem = IsGoogleKeyProblem(status, errorBody);
+                PauseGoogleBooks(status, keyProblem);
+                ctx.Note(keyProblem
+                    ? $"Google Books: {(int)status} {status}, API key rejected"
+                    : $"Google Books: {(int)status} {status}, quota exhausted");
                 return null;
+            }
+
+            if (source == CatalogueSource.OpenLibrary
+                && (status is HttpStatusCode.TooManyRequests or HttpStatusCode.Forbidden || (int)status >= 500))
+            {
+                PauseOpenLibrary(status);
             }
 
             ctx.Fail(source, $"{name}: {(int)status} {status}");
@@ -831,6 +884,67 @@ public class OnlineCoverFetcher
             _logger.LogDebug("{Source} request timed out: {Url}", name, StripKey(url));
             return null;
         }
+    }
+
+    private static async Task<string> ReadErrorBodyAsync(HttpResponseMessage response, CancellationToken ct)
+    {
+        try
+        {
+            var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            return body.Length > 4096 ? body[..4096] : body;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or IOException)
+        {
+            return string.Empty;
+        }
+    }
+
+    /// <summary>
+    /// Whether Google refused the key or its project rather than the quota: a 400
+    /// ("API key not valid") or a 403 that names no quota or rate limit (the Books
+    /// API not enabled for the key's project, a referrer or IP restriction).
+    /// </summary>
+    internal static bool IsGoogleKeyProblem(HttpStatusCode status, string body)
+    {
+        if (status == HttpStatusCode.BadRequest)
+        {
+            return true;
+        }
+
+        if (status != HttpStatusCode.Forbidden)
+        {
+            return false;
+        }
+
+        return !(body.Contains("quota", StringComparison.OrdinalIgnoreCase)
+            || body.Contains("RESOURCE_EXHAUSTED", StringComparison.Ordinal)
+            || body.Contains("LimitExceeded", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private bool IsOpenLibraryPaused()
+    {
+        lock (_openLibraryPauseLock)
+        {
+            return DateTime.UtcNow < _openLibraryPausedUntil;
+        }
+    }
+
+    private void PauseOpenLibrary(HttpStatusCode status)
+    {
+        lock (_openLibraryPauseLock)
+        {
+            if (DateTime.UtcNow < _openLibraryPausedUntil)
+            {
+                return;
+            }
+
+            _openLibraryPausedUntil = DateTime.UtcNow + OpenLibraryPause;
+        }
+
+        _logger.LogWarning(
+            "Open Library refused a request ({Status}). Open Library is skipped for the next {Minutes} minutes; the items missed meanwhile are retried on the next run",
+            (int)status,
+            OpenLibraryPause.TotalMinutes);
     }
 
     private static string StripKey(string url)
@@ -853,7 +967,7 @@ public class OnlineCoverFetcher
     /// key its shared daily quota is often zero, and asking again for each of
     /// hundreds of items only slows the run. A new key lifts the pause at once.
     /// </summary>
-    private void PauseGoogleBooks(HttpStatusCode status)
+    private void PauseGoogleBooks(HttpStatusCode status, bool keyProblem)
     {
         var key = GoogleBooksApiKeySource() ?? string.Empty;
         lock (_googlePauseLock)
@@ -865,6 +979,15 @@ public class OnlineCoverFetcher
 
             _googlePausedUntil = DateTime.UtcNow + GoogleBooksPause;
             _googlePausedKey = key;
+        }
+
+        if (keyProblem)
+        {
+            _logger.LogWarning(
+                "Google Books rejected the API key ({Status}): check the key in the SmartCovers settings and that its Google Cloud project has the Books API enabled. Google Books is skipped for the next {Hours} hours",
+                (int)status,
+                GoogleBooksPause.TotalHours);
+            return;
         }
 
         _logger.LogWarning(

@@ -40,6 +40,13 @@ internal sealed class OrderedMockHandler : HttpMessageHandler
         }
 
         if (uri.Host.Contains("openlibrary.org", StringComparison.Ordinal)
+            && uri.AbsolutePath.Contains("search", StringComparison.Ordinal)
+            && (query.TryGetValue("isbn", out var id) || query.TryGetValue("oclc", out id)))
+        {
+            return query.ContainsKey("isbn") ? $"OL isbn='{id}'" : $"OL oclc='{id}'";
+        }
+
+        if (uri.Host.Contains("openlibrary.org", StringComparison.Ordinal)
             && uri.AbsolutePath.Contains("search", StringComparison.Ordinal))
         {
             var title = query.GetValueOrDefault("title", string.Empty);

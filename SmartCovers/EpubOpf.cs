@@ -135,9 +135,14 @@ internal static class EpubOpf
             }
         }
 
-        if (string.Equals(scheme, "ISBN", StringComparison.OrdinalIgnoreCase))
+        if (scheme != null)
         {
-            return BookNameParser.NormalizeIsbn(value);
+            // An identifier that names its scheme is an ISBN only when that scheme
+            // says so: a calibre id, an ASIN or a catalogue number can pass the
+            // ISBN-10 checksum by chance (about 1 in 11 ten-digit values do).
+            return string.Equals(scheme, "ISBN", StringComparison.OrdinalIgnoreCase)
+                ? BookNameParser.NormalizeIsbn(value)
+                : null;
         }
 
         // A bare 13-digit or 10-digit value that passes the checksum is an ISBN too;

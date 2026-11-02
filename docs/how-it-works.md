@@ -85,9 +85,9 @@ For multi-file audiobooks stored as a directory of chapter files, the plugin:
 
 When all local extraction methods fail, the plugin can search online sources for a matching cover:
 
-1. **By ISBN**, when the file name or the EPUB's metadata carries one with a valid checksum: Open Library's cover for that exact edition, then Google Books.
+1. **By ISBN**, when the file name or the EPUB's metadata carries one with a valid checksum (an EPUB identifier that names another scheme, such as a calibre id, is never taken for one): Open Library's search by ISBN, which gives the edition's cover or its work's, then Google Books. An OCLC number in the name is searched the same way. Covers are fetched by cover id, which Open Library does not rate-limit per address the way it limits lookups by ISBN.
 2. **Open Library** (openlibrary.org) by its title and author fields.
-3. **Open Library free-text search**. The title field matches the work's title, usually the original English one, so `Hacia la Fundación` by Isaac Asimov finds nothing there while a free-text search finds *Forward the Foundation*. A free-text hit is only taken when it names our author; without an author, only a title of four words or more is searched this way.
+3. **Open Library free-text search**. The title field matches the work's title, usually the original English one, so `Hacia la Fundación` by Isaac Asimov finds nothing there while a free-text search finds *Forward the Foundation*. A free-text hit is only taken when it names our author, also on the title-only retry below; only a book with no known author is searched this way unchecked, and only for a title of four words or more.
 4. **Google Books** (books.google.com), preferring the highest-resolution image available.
 5. If that finds nothing, the title alone is retried; then title and author swapped, since plenty of folders are named `<Author> - <Title>` and nothing in the name says which half is which; then the main title with its subtitle dropped (after a colon, a full stop, or a comma followed by three or more words), which is how catalogues index a title.
 
@@ -95,7 +95,9 @@ A title that identifies nothing is never searched for. A numbered disc folder yi
 
 The title and author come from the best source available: an EPUB's own metadata, the Album and Artist tags of an audiobook track (`ASIMOV, Isaac` reads as `Isaac Asimov`), the authors Jellyfin holds for a book, then the name. Names are cleaned of format tags like `(Mp3)`, locale tags like `[Castellano]`, Audible codes, year suffixes, series indicators and OCR tags like `(texto OCR, HathiTrust)`. Anna's Archive names (`Title -- Author -- Place, Year -- Publisher -- isbn13 ... -- <md5> -- Anna’s Archive`) are read field by field. A list of authors is searched by its first name. Fetched covers are cached by Jellyfin after the first scan, so online lookups only happen once per item.
 
-Without an API key, Google Books often refuses every request because the shared daily quota is used up. The plugin then logs one warning, skips Google Books for six hours, and relies on Open Library. Set a key in the settings to use it.
+Without an API key, Google Books often refuses every request because the shared daily quota is used up. The plugin then logs one warning, skips Google Books for six hours, and relies on Open Library. Set a key in the settings to use it. A key Google rejects (wrong, or its project lacks the Books API) gets its own warning and the same pause.
+
+When Open Library refuses a request (429, 403 or a 5xx), the rest of that lookup stops asking it and every lookup skips it for five minutes, with one warning. The items missed meanwhile are reported as a network error, never drawn, and retried on the next run.
 
 This feature is **enabled by default** and can be toggled in the plugin settings.
 
@@ -109,7 +111,11 @@ the author below it, on a background colour picked from the title, so the same b
 
 It only draws after every real source has said no. It never draws after a network error, because the next run may
 find the real cover. It never draws for movies or TV, nor for music tracks in an album folder, which show the
-album's art. A music file loose in a music library's top folder can get one. The fonts come from the server; none
+album's art. A track that belongs to no album can get one: a file loose in a music library's top folder, or a
+track in a folder Jellyfin did not make an album because it collects songs from many albums. It never replaces a
+real cover. Jellyfin asks its image fetchers in the library's order and keeps the first image, so put SmartCovers
+last when this setting is on; otherwise a drawn cover can come before another fetcher's real one, until the nightly
+task swaps it. The fonts come from the server; none
 is bundled. The official Jellyfin image has them; on a host without fonts nothing is drawn and the log says so.
 
 A drawn cover carries a marker, so it is never taken for a real cover found beside the media, and the nightly task

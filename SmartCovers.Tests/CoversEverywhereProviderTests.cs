@@ -219,7 +219,7 @@ public class CoversEverywhereProviderTests : IDisposable
         Assert.Equal("José Manuel Almendros Toledo", outcome.Author);
 
         // The file name's ISBN is still asked first.
-        Assert.StartsWith("https://covers.openlibrary.org/b/isbn/9788487136023-L.jpg?default=false", handler.RequestedUrls[0], StringComparison.Ordinal);
+        Assert.StartsWith("https://openlibrary.org/search.json?isbn=9788487136023&", handler.RequestedUrls[0], StringComparison.Ordinal);
         Assert.Contains(handler.LookupSequence, s => s.Contains("author='José Manuel Almendros Toledo'", StringComparison.Ordinal));
     }
 
@@ -421,10 +421,89 @@ public class CoversEverywhereProviderTests : IDisposable
 
         _libraryManager.Setup(l => l.GetContentType(It.IsAny<BaseItem>())).Returns(CollectionType.music);
         var album = Dir("Some Artist - Some Album");
-        var item = new Audio { Id = Guid.NewGuid(), Path = Track(album, "01 - Song.mp3"), Name = "Song" };
+        var albumItem = new MusicAlbum { Id = Guid.NewGuid(), Path = album, Name = "Some Album" };
+        _libraryManager.Setup(l => l.GetItemById(albumItem.Id)).Returns(albumItem);
+        var item = new Audio { Id = Guid.NewGuid(), Path = Track(album, "01 - Song.mp3"), Name = "Song", ParentId = albumItem.Id };
 
         var result = await Provider(NothingOnline(), online: true, generated: true).GetImage(item, ImageType.Primary, CancellationToken.None);
 
         Assert.False(result.HasImage);
+    }
+
+    [Fact]
+    public async Task MusicTrackInAFolderOfManyAlbums_GetsADrawnCover_FromItsTags()
+    {
+        if (TestFonts.Path == null)
+        {
+            return;
+        }
+
+        _libraryManager.Setup(l => l.GetContentType(It.IsAny<BaseItem>())).Returns(CollectionType.music);
+        var mixed = Dir("WCYR-Base");
+        var folder = new Folder { Id = Guid.NewGuid(), Path = mixed, Name = "WCYR-Base" };
+        _libraryManager.Setup(l => l.GetItemById(folder.Id)).Returns(folder);
+        var item = new Audio
+        {
+            Id = Guid.NewGuid(),
+            Path = Track(mixed, "Radiohead - Videotape.flac"),
+            Name = "Videotape",
+            Album = "In Rainbows",
+            Artists = ["Radiohead"],
+            ParentId = folder.Id
+        };
+
+        var handler = NothingOnline();
+        var result = await Provider(handler, online: true, generated: true).GetImage(item, ImageType.Primary, CancellationToken.None);
+
+        Assert.True(result.HasImage);
+        Assert.Empty(handler.RequestedUrls);
+        var outcome = Outcome(item);
+        Assert.Equal(CoverReason.Generated, outcome.Reason);
+        Assert.Equal("Videotape", outcome.Title);
+        Assert.Equal("Radiohead", outcome.Author);
+    }
+
+    [Fact]
+    public async Task MusicTrackWithAnUnknownParent_IsNeverDrawn()
+    {
+        if (TestFonts.Path == null)
+        {
+            return;
+        }
+
+        _libraryManager.Setup(l => l.GetContentType(It.IsAny<BaseItem>())).Returns(CollectionType.music);
+        var dir = Dir("Somewhere");
+        var item = new Audio { Id = Guid.NewGuid(), Path = Track(dir, "Song.mp3"), Name = "Song", ParentId = Guid.NewGuid() };
+
+        var result = await Provider(NothingOnline(), online: true, generated: true).GetImage(item, ImageType.Primary, CancellationToken.None);
+
+        Assert.False(result.HasImage);
+    }
+
+    [Fact]
+    public async Task RealCover_IsNeverReplacedByADrawnOne()
+    {
+        if (TestFonts.Path == null)
+        {
+            return;
+        }
+
+        // A cover another provider downloaded earlier; Jellyfin asks again when
+        // images are being replaced, and the catalogues find nothing this time.
+        var current = Path.Combine(_library, "downloaded-poster.jpg");
+        File.WriteAllBytes(current, Jpeg(8000, 0x44));
+        var item = new Book
+        {
+            Id = Guid.NewGuid(),
+            Name = "Dizionario dei luoghi della Calabria",
+            ImageInfos = [new ItemImageInfo { Type = ImageType.Primary, Path = current }]
+        };
+
+        var provider = Provider(NothingOnline(), online: true, generated: true);
+        var result = await provider.GetImage(item, ImageType.Primary, CancellationToken.None);
+
+        Assert.False(result.HasImage);
+        Assert.Equal(0, provider.GeneratedRenderCount);
+        Assert.Equal(CoverReason.NoOnlineMatch, Outcome(item).Reason);
     }
 }

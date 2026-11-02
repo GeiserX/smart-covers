@@ -304,12 +304,15 @@ public class CoverImageProvider : IDynamicImageProvider
             return await GetOnlineCover(item, null, attempt, cancellationToken).ConfigureAwait(false);
         }
 
-        // Music: never looked up online. A loose file in the library's top folder,
-        // which has no album, may get a drawn cover.
+        // Music: never looked up online. A track that belongs to no album may get
+        // a drawn cover: a loose file in the library's top folder, or a track in a
+        // folder Jellyfin did not make an album because it collects songs of many
+        // albums ("WCYR-Base/Radiohead - Videotape.flac").
         if (isTrack)
         {
             (attempt.Title, attempt.Author) = OnlineCoverFetcher.ParseMusicTrack(item);
-            attempt.LooseMusic = LibraryContext.IsSameDirectory(Path.GetDirectoryName(path), libraryRoot);
+            attempt.LooseMusic = LibraryContext.IsSameDirectory(Path.GetDirectoryName(path), libraryRoot)
+                || IsInPlainFolder(item);
         }
 
         return result;
@@ -332,6 +335,29 @@ public class CoverImageProvider : IDynamicImageProvider
     private string? GetLibraryRootPath(BaseItem item) => LibraryContext.RootPath(item, _libraryManager);
 
     private bool IsBookLibrary(BaseItem item) => LibraryContext.IsBookLibrary(item, _libraryManager);
+
+    /// <summary>
+    /// True when the item's parent is a plain folder, not a music album. An unknown
+    /// parent counts as an album, so nothing is drawn on a guess.
+    /// </summary>
+    private bool IsInPlainFolder(BaseItem item)
+    {
+        if (_libraryManager == null || item.ParentId == Guid.Empty)
+        {
+            return false;
+        }
+
+        try
+        {
+            var parent = _libraryManager.GetItemById(item.ParentId);
+            return parent != null && parent.GetType() == typeof(Folder);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogDebug(ex, "Could not read the parent of '{Name}'", item.Name);
+            return false;
+        }
+    }
 
     /// <summary>
     /// The cover for one book folder: images on disk first, then the folder's own
@@ -1620,8 +1646,9 @@ public class CoverImageProvider : IDynamicImageProvider
     /// <summary>
     /// Draws a plain title and author cover, when the setting is on and every real
     /// source has definitely missed. Never after a network error (the next run may
-    /// find the real cover), never outside book libraries except for a loose music
-    /// file, and never again for an item that already carries a drawn cover.
+    /// find the real cover), never outside book libraries except for a music track
+    /// that belongs to no album, never over a real cover, and never again for an
+    /// item that already carries a drawn cover.
     /// </summary>
     private DynamicImageResponse MaybeGenerate(BaseItem item, CoverAttempt attempt)
     {
@@ -1647,9 +1674,18 @@ public class CoverImageProvider : IDynamicImageProvider
 
         // Jellyfin keeps an image no provider replaces, so returning nothing leaves
         // the drawn cover in place without rewriting it every night.
-        if (GeneratedCover.IsGeneratedFile(PrimaryImagePath(item)))
+        var current = PrimaryImagePath(item);
+        if (GeneratedCover.IsGeneratedFile(current))
         {
             attempt.Reason = CoverReason.KeptGenerated;
+            return noImage;
+        }
+
+        // A real cover is never replaced by a drawn one. Jellyfin asks providers
+        // again when images are being replaced, and a cover fetched earlier by
+        // another provider is not one ours can find.
+        if (!string.IsNullOrEmpty(current))
+        {
             return noImage;
         }
 
@@ -1872,7 +1908,7 @@ internal sealed class CoverAttempt
     /// <summary>Gets or sets the catalogue the cover came from.</summary>
     public string? Source { get; set; }
 
-    /// <summary>Gets or sets a value indicating whether this is a music file loose in the library's top folder.</summary>
+    /// <summary>Gets or sets a value indicating whether this is a music file that belongs to no album.</summary>
     public bool LooseMusic { get; set; }
 
     /// <summary>A copy for the folder cache.</summary>

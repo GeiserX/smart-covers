@@ -6,7 +6,7 @@ After installation, configure the plugin in **Dashboard > SmartCovers** (appears
 |---------|---------|-------------|
 | Online Cover Fetching | Enabled | Search Open Library and Google Books when local extraction fails. |
 | Google Books API key | Empty | Optional. Without a key Google Books often refuses every lookup because its shared daily quota is used up, and only Open Library answers. A free key from the Google Cloud console (Books API enabled) fixes that. |
-| Draw a plain cover | Off | Draws a cover with the title and author when no real cover exists anywhere: books and audiobooks, and music files loose in a music library's top folder. A real cover replaces it as soon as one turns up. |
+| Draw a plain cover | Off | Draws a cover with the title and author when no real cover exists anywhere: books and audiobooks, and music tracks that belong to no album (loose in the library's top folder, or in a folder of songs from many albums). It never replaces a real cover, and a real cover replaces it as soon as one turns up. Put SmartCovers last in the library's image fetcher order, so every other fetcher gets its turn before a cover is drawn. |
 | DPI | 150 | Resolution for PDF first-page rendering. Higher values produce sharper covers at the cost of speed. |
 | Timeout | 30 s | Maximum time allowed per extraction. Applies to both PDF rendering and `ffmpeg`. |
 | JPEG quality | 85 | Quality of the rendered PDF cover. Config file only (`JpegQuality` in `plugins/configurations/SmartCovers.xml` under the Jellyfin config directory); not on the settings page. |
