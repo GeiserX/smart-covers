@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/GeiserX/smart-covers/main/docs/images/icon.png",
     "versions": [
       {
+        "version": "7.5.1.0",
+        "changelog": "Google Books can no longer give a book a wrong cover: its \"image not available\" placeholder and thin title-page strips are recognised by their content and rejected, any image more than 1.5 times wider than tall is refused, and a Google result must name the book's author, the same rule Open Library free text follows. When the full-size Google image is rejected, the thumbnail the API listed is tried. A rejected image falls through to the next source or the drawn cover.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/GeiserX/smart-covers/releases/download/v7.5.1.0/smart-covers_7.5.1.0.zip",
+        "checksum": "806251d527de71f71aced6e7b32dc0d9",
+        "timestamp": "2026-11-03T03:19:21Z"
+      },
+      {
         "version": "7.5.0.0",
         "changelog": "Tracks of a folder audiobook take the cover Jellyfin already holds for the folder. Books are looked up by their own metadata first (EPUB title, author and ISBN; track Album and Artist tags), Anna's Archive file names are read field by field, ISBN and OCLC lookups go first, and Open Library free-text search finds translated titles, accepted only when the hit names the author. Open Library and Google Books back off after a refusal, with one warning; Google Books takes an optional API key. New optional drawn title-and-author cover, off by default, for books no catalogue knows. Plain folders are only looked up in book libraries. The nightly task logs one reason per book.",
         "targetAbi": "10.11.0.0",
