@@ -226,7 +226,7 @@ public class OnlineRetryOrderTests
             {
                 items = new[]
                 {
-                    new { volumeInfo = new { imageLinks = new { thumbnail = "https://books.google.com/x?zoom=1" } } }
+                    new { volumeInfo = new { authors = new[] { "Oliver Burkeman" }, imageLinks = new { thumbnail = "https://books.google.com/x?zoom=1" } } }
                 }
             }));
         handler.When(

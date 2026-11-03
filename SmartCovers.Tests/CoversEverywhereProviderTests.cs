@@ -314,6 +314,44 @@ public class CoversEverywhereProviderTests : IDisposable
     }
 
     [Fact]
+    public async Task ItemCarryingADrawnCover_KeepsIt_WhenGoogleOnlyHasItsPlaceholder()
+    {
+        if (TestFonts.Path is not { } font)
+        {
+            return;
+        }
+
+        var current = Path.Combine(_library, "current-poster.jpg");
+        File.WriteAllBytes(current, GeneratedCover.Render("Dizionario dei luoghi della Calabria", null, 85, font)!);
+        var item = new Book
+        {
+            Id = Guid.NewGuid(),
+            Name = "Dizionario dei luoghi della Calabria",
+            ImageInfos = [new ItemImageInfo { Type = ImageType.Primary, Path = current }]
+        };
+
+        var placeholder = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "google", "placeholder.png"));
+        var handler = new OrderedMockHandler();
+        handler.WhenUrlContains("openlibrary.org/search", new { docs = Array.Empty<object>() });
+        handler.WhenUrlContains("googleapis.com/books", new
+        {
+            items = new[]
+            {
+                new { volumeInfo = new { imageLinks = new { thumbnail = "http://books.google.com/books/content?id=k4RWAAAAYAAJ&zoom=1" } } }
+            }
+        });
+        handler.When(
+            url => url.Contains("books.google.com", StringComparison.Ordinal),
+            () => new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new ByteArrayContent(placeholder) });
+
+        var result = await Provider(handler, online: true, generated: true).GetImage(item, ImageType.Primary, CancellationToken.None);
+
+        Assert.False(result.HasImage);
+        Assert.Equal(CoverReason.KeptGenerated, Outcome(item).Reason);
+        Assert.Contains(handler.RequestedUrls, u => u.Contains("books.google.com", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task ItemCarryingADrawnCover_GetsTheRealOneOnceItExists()
     {
         if (TestFonts.Path is not { } font)

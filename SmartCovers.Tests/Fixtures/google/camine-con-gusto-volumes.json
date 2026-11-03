@@ -1,0 +1,259 @@
+{
+  "kind": "books#volumes",
+  "totalItems": 2926,
+  "items": [
+    {
+      "kind": "books#volume",
+      "id": "A4BJXwAACAAJ",
+      "etag": "niiu4mMo2D8",
+      "selfLink": "https://www.googleapis.com/books/v1/volumes/A4BJXwAACAAJ",
+      "volumeInfo": {
+        "title": "Camine Con Gusto",
+        "publishedDate": "2011-11-01",
+        "industryIdentifiers": [
+          {
+            "type": "ISBN_10",
+            "identifier": "0912423625"
+          },
+          {
+            "type": "ISBN_13",
+            "identifier": "9780912423623"
+          }
+        ],
+        "readingModes": {
+          "text": false,
+          "image": false
+        },
+        "pageCount": 224,
+        "printType": "BOOK",
+        "categories": [
+          "Arthritis"
+        ],
+        "maturityRating": "NOT_MATURE",
+        "allowAnonLogging": false,
+        "contentVersion": "preview-1.0.0",
+        "language": "es",
+        "previewLink": "http://books.google.es/books?id=A4BJXwAACAAJ&dq=Camine+Con+Gusto&hl=&cd=1&source=gbs_api",
+        "infoLink": "http://books.google.es/books?id=A4BJXwAACAAJ&dq=Camine+Con+Gusto&hl=&source=gbs_api",
+        "canonicalVolumeLink": "https://books.google.com/books/about/Camine_Con_Gusto.html?hl=&id=A4BJXwAACAAJ"
+      },
+      "saleInfo": {
+        "country": "ES",
+        "saleability": "NOT_FOR_SALE",
+        "isEbook": false
+      },
+      "accessInfo": {
+        "country": "ES",
+        "viewability": "NO_PAGES",
+        "embeddable": false,
+        "publicDomain": false,
+        "textToSpeechPermission": "ALLOWED",
+        "epub": {
+          "isAvailable": false
+        },
+        "pdf": {
+          "isAvailable": false
+        },
+        "webReaderLink": "http://play.google.com/books/reader?id=A4BJXwAACAAJ&hl=&source=gbs_api",
+        "accessViewStatus": "NONE",
+        "quoteSharingAllowed": false
+      }
+    },
+    {
+      "kind": "books#volume",
+      "id": "Iad2EAAAQBAJ",
+      "etag": "gYOl6g9MmsM",
+      "selfLink": "https://www.googleapis.com/books/v1/volumes/Iad2EAAAQBAJ",
+      "volumeInfo": {
+        "title": "Rota se camina igual",
+        "authors": [
+          "Lorena Pronsky"
+        ],
+        "publisher": "VERGARA",
+        "publishedDate": "2022-07-01",
+        "description": "Lorena Pronsky impuso un nuevo lenguaje en este libro, que lo convirtió clásico entre sus lectores. Rota se camina igual tiene un discurso fiel y contundente que nombra de forma precisa y lacerante las vivencias que todos, en algún momento de nuestra vida, atravesamos. Rota se camina igual es un libro no solo fue un éxito de ventas sino que también se instaló rápidamente como un clásico. Difícil de catalogar dentro de un género literario, Lorena Pronsky logra conmover al lector a través de un lenguaje disruptivo pero sencillo, a través de relatos que nos invitan a conectarnos con nuestras emociones. Apoyada en la herida como parte inevitable de la vida, nos muestra de qué manera podemos darles un nuevo destino a esos dolores que se nos imponen. En este viaje de reencuentro con nosotros mismos nos iremos identificando con las heridas de la pérdida, del abandono, del desamor, y así entender que siempre tendremos dos caminos para elegir: aferrarnos a ese dolor que nos deja en pausa, o bien comprender que asumir la realidad es el primer escalón para reinventarnos e iniciar una nueva etapa. Aceptar que estamos atravesados por tormentas que han dejado una marca indeleble nos enseña que \"continuar\" es una palabra que encierra todas las posibilidades aún desconocidas. Solo tenemos que tomar ese envión interior para darnos cuenta de que, a pesar de nuestras fisuras personales, rota se camina igual .",
+        "industryIdentifiers": [
+          {
+            "type": "ISBN_13",
+            "identifier": "9789501532265"
+          },
+          {
+            "type": "ISBN_10",
+            "identifier": "9501532267"
+          }
+        ],
+        "readingModes": {
+          "text": true,
+          "image": true
+        },
+        "pageCount": 221,
+        "printType": "BOOK",
+        "categories": [
+          "Self-Help"
+        ],
+        "maturityRating": "NOT_MATURE",
+        "allowAnonLogging": true,
+        "contentVersion": "0.4.5.0.preview.3",
+        "panelizationSummary": {
+          "containsEpubBubbles": false,
+          "containsImageBubbles": false
+        },
+        "imageLinks": {
+          "smallThumbnail": "http://books.google.com/books/content?id=Iad2EAAAQBAJ&printsec=frontcover&img=1&zoom=5&edge=curl&source=gbs_api",
+          "thumbnail": "http://books.google.com/books/content?id=Iad2EAAAQBAJ&printsec=frontcover&img=1&zoom=1&edge=curl&source=gbs_api"
+        },
+        "language": "es",
+        "previewLink": "http://books.google.es/books?id=Iad2EAAAQBAJ&pg=PA46-IA1&dq=Camine+Con+Gusto&hl=&cd=2&source=gbs_api",
+        "infoLink": "https://play.google.com/store/books/details?id=Iad2EAAAQBAJ&source=gbs_api",
+        "canonicalVolumeLink": "https://play.google.com/store/books/details?id=Iad2EAAAQBAJ"
+      },
+      "saleInfo": {
+        "country": "ES",
+        "saleability": "FOR_SALE",
+        "isEbook": true,
+        "listPrice": {
+          "amount": 5.99,
+          "currencyCode": "EUR"
+        },
+        "retailPrice": {
+          "amount": 5.69,
+          "currencyCode": "EUR"
+        },
+        "buyLink": "https://play.google.com/store/books/details?id=Iad2EAAAQBAJ&rdid=book-Iad2EAAAQBAJ&rdot=1&source=gbs_api",
+        "offers": [
+          {
+            "finskyOfferType": 1,
+            "listPrice": {
+              "amountInMicros": 5990000,
+              "currencyCode": "EUR"
+            },
+            "retailPrice": {
+              "amountInMicros": 5690000,
+              "currencyCode": "EUR"
+            },
+            "giftable": true
+          }
+        ]
+      },
+      "accessInfo": {
+        "country": "ES",
+        "viewability": "PARTIAL",
+        "embeddable": true,
+        "publicDomain": false,
+        "textToSpeechPermission": "ALLOWED_FOR_ACCESSIBILITY",
+        "epub": {
+          "isAvailable": true,
+          "acsTokenLink": "http://books.google.es/books/download/Rota_se_camina_igual-sample-epub.acsm?id=Iad2EAAAQBAJ&format=epub&output=acs4_fulfillment_token&dl_type=sample&source=gbs_api"
+        },
+        "pdf": {
+          "isAvailable": true,
+          "acsTokenLink": "http://books.google.es/books/download/Rota_se_camina_igual-sample-pdf.acsm?id=Iad2EAAAQBAJ&format=pdf&output=acs4_fulfillment_token&dl_type=sample&source=gbs_api"
+        },
+        "webReaderLink": "http://play.google.com/books/reader?id=Iad2EAAAQBAJ&hl=&source=gbs_api",
+        "accessViewStatus": "SAMPLE",
+        "quoteSharingAllowed": false
+      },
+      "searchInfo": {
+        "textSnippet": "... \u003cb\u003egusto\u003c/b\u003e de prestarle a ese amigo lo que necesitaba, de acariciar la cabeza de un enfermo que no tenía a nadie al borde de la cama y de pedir perdón cada vez que mi corazón me decía que era mi necesidad. Si mal no recuerdo, me di el \u003cb\u003egusto\u003c/b\u003e&nbsp;..."
+      }
+    },
+    {
+      "kind": "books#volume",
+      "id": "7I0oEQAAQBAJ",
+      "etag": "Fil6FtI30gA",
+      "selfLink": "https://www.googleapis.com/books/v1/volumes/7I0oEQAAQBAJ",
+      "volumeInfo": {
+        "title": "La primera que camina",
+        "authors": [
+          "Ana Francis Mor"
+        ],
+        "publisher": "RESERVOIR BOOKS",
+        "publishedDate": "2024-10-14",
+        "description": "Para tomar una decisión que podría dividir el tiempo en un antes y un después, una mujer deja su casa y empieza a caminar sin rumbo. A cada paso busca un equilibrio entre la obediencia y la autodeterminación, guiada por la voluntad de imprimirle cuerpo a sus pensamientos. Por el camino se atraviesan diálogos, testimonios, acusaciones y secretos, entre los que se cuelan a ratos el suave recuerdo de su esposo y la voz de su Dios En La primera que camina, Ana Francis Mor reescribe el Antiguo Testamento (del Éxodo a Reyes) a partir de una premisa peculiar: tras el anuncio de Gabriel, María decide tomarse un tiempo para decidir si engendrará o no al Hijo de Dios. Extrañado y seducido por esa determinación hacia la libertad, Dios acepta que durante tres años María recorra a pie un extenso mosaico de historias, en las que escuchará de migraciones y genealogías que han luchado por sobrevivir a través de mares y desiertos. Con una notable capacidad para crear distintas voces narrativas al ritmo de las emociones, las dudas y los razonamientos de María, la autora hilvana una historia de temperamento hilarante y místico, una reinterpretación de uno de los relatos fundacionales de Occidente y una profunda exploración de las implicaciones del libre albedrío.",
+        "industryIdentifiers": [
+          {
+            "type": "ISBN_13",
+            "identifier": "9786073851060"
+          },
+          {
+            "type": "ISBN_10",
+            "identifier": "6073851065"
+          }
+        ],
+        "readingModes": {
+          "text": true,
+          "image": true
+        },
+        "pageCount": 282,
+        "printType": "BOOK",
+        "categories": [
+          "Fiction"
+        ],
+        "maturityRating": "NOT_MATURE",
+        "allowAnonLogging": false,
+        "contentVersion": "1.2.2.0.preview.3",
+        "panelizationSummary": {
+          "containsEpubBubbles": false,
+          "containsImageBubbles": false
+        },
+        "imageLinks": {
+          "smallThumbnail": "http://books.google.com/books/content?id=7I0oEQAAQBAJ&printsec=frontcover&img=1&zoom=5&edge=curl&source=gbs_api",
+          "thumbnail": "http://books.google.com/books/content?id=7I0oEQAAQBAJ&printsec=frontcover&img=1&zoom=1&edge=curl&source=gbs_api"
+        },
+        "language": "es",
+        "previewLink": "http://books.google.es/books?id=7I0oEQAAQBAJ&pg=PT26&dq=Camine+Con+Gusto&hl=&cd=3&source=gbs_api",
+        "infoLink": "https://play.google.com/store/books/details?id=7I0oEQAAQBAJ&source=gbs_api",
+        "canonicalVolumeLink": "https://play.google.com/store/books/details?id=7I0oEQAAQBAJ"
+      },
+      "saleInfo": {
+        "country": "ES",
+        "saleability": "FOR_SALE",
+        "isEbook": true,
+        "listPrice": {
+          "amount": 12.99,
+          "currencyCode": "EUR"
+        },
+        "retailPrice": {
+          "amount": 12.34,
+          "currencyCode": "EUR"
+        },
+        "buyLink": "https://play.google.com/store/books/details?id=7I0oEQAAQBAJ&rdid=book-7I0oEQAAQBAJ&rdot=1&source=gbs_api",
+        "offers": [
+          {
+            "finskyOfferType": 1,
+            "listPrice": {
+              "amountInMicros": 12990000,
+              "currencyCode": "EUR"
+            },
+            "retailPrice": {
+              "amountInMicros": 12340000,
+              "currencyCode": "EUR"
+            },
+            "giftable": true
+          }
+        ]
+      },
+      "accessInfo": {
+        "country": "ES",
+        "viewability": "PARTIAL",
+        "embeddable": true,
+        "publicDomain": false,
+        "textToSpeechPermission": "ALLOWED_FOR_ACCESSIBILITY",
+        "epub": {
+          "isAvailable": true,
+          "acsTokenLink": "http://books.google.es/books/download/La_primera_que_camina-sample-epub.acsm?id=7I0oEQAAQBAJ&format=epub&output=acs4_fulfillment_token&dl_type=sample&source=gbs_api"
+        },
+        "pdf": {
+          "isAvailable": true,
+          "acsTokenLink": "http://books.google.es/books/download/La_primera_que_camina-sample-pdf.acsm?id=7I0oEQAAQBAJ&format=pdf&output=acs4_fulfillment_token&dl_type=sample&source=gbs_api"
+        },
+        "webReaderLink": "http://play.google.com/books/reader?id=7I0oEQAAQBAJ&hl=&source=gbs_api",
+        "accessViewStatus": "SAMPLE",
+        "quoteSharingAllowed": false
+      },
+      "searchInfo": {
+        "textSnippet": "... \u003cb\u003egusto\u003c/b\u003e . -Por defenderte . -Por \u003cb\u003egusto\u003c/b\u003e . -Por defenderte . -Por \u003cb\u003egusto\u003c/b\u003e . -Porque me \u003cb\u003egusta\u003c/b\u003e defenderte . -Cuando matas mujeres no me estás defendiendo . -Por supuesto que sí . ¿ Qué no ves que si no lo hago , vas a acabar asfixiado con&nbsp;..."
+      }
+    }
+  ]
+}

@@ -423,7 +423,7 @@ public class OnlineCoverFetcher
         foreach (var isbn in query.Isbns.Distinct(StringComparer.Ordinal))
         {
             var byIsbn = await TryOpenLibrarySearchAsync($"isbn={isbn}", null, $"ISBN {isbn}", ctx, cancellationToken).ConfigureAwait(false);
-            byIsbn ??= await TryGoogleBooksAsync($"isbn:{isbn}", $"isbn {isbn}", ctx, cancellationToken).ConfigureAwait(false);
+            byIsbn ??= await TryGoogleBooksAsync($"isbn:{isbn}", null, $"isbn {isbn}", ctx, cancellationToken).ConfigureAwait(false);
             if (byIsbn != null)
             {
                 return ctx.Found(byIsbn);
@@ -473,10 +473,9 @@ public class OnlineCoverFetcher
             attempts.Add((mainTitle, author));
         }
 
-        var authorKnown = !string.IsNullOrEmpty(author);
         foreach (var (attemptTitle, attemptAuthor) in attempts)
         {
-            var result = await TryAttemptAsync(attemptTitle, attemptAuthor, authorKnown, ctx, cancellationToken).ConfigureAwait(false);
+            var result = await TryAttemptAsync(attemptTitle, attemptAuthor, author, ctx, cancellationToken).ConfigureAwait(false);
             if (result != null)
             {
                 return ctx.Found(result);
@@ -492,11 +491,11 @@ public class OnlineCoverFetcher
     /// </summary>
     /// <param name="title">The title to search.</param>
     /// <param name="author">The author to search with, or null for a title-only search.</param>
-    /// <param name="authorKnown">Whether the book has a known author, even when this reading leaves it out.</param>
+    /// <param name="knownAuthor">The book's author, even when this reading leaves it out; null when unknown.</param>
     /// <param name="ctx">The lookup state.</param>
     /// <param name="ct">The cancellation token.</param>
     private async Task<(MemoryStream Stream, ImageFormat Format)?> TryAttemptAsync(
-        string title, string? author, bool authorKnown, LookupContext ctx, CancellationToken ct)
+        string title, string? author, string? knownAuthor, LookupContext ctx, CancellationToken ct)
     {
         var fields = $"title={Uri.EscapeDataString(title)}";
         if (!string.IsNullOrEmpty(author))
@@ -523,7 +522,7 @@ public class OnlineCoverFetcher
             result = await TryOpenLibrarySearchAsync(
                 $"q={Uri.EscapeDataString($"{title} {author}")}", author, title, ctx, ct).ConfigureAwait(false);
         }
-        else if (!authorKnown && BookNameParser.WordCount(title) >= MinFreeTextTitleWords)
+        else if (string.IsNullOrEmpty(knownAuthor) && BookNameParser.WordCount(title) >= MinFreeTextTitleWords)
         {
             result = await TryOpenLibrarySearchAsync(
                 $"q={Uri.EscapeDataString(title)}", null, title, ctx, ct).ConfigureAwait(false);
@@ -534,13 +533,24 @@ public class OnlineCoverFetcher
             return result;
         }
 
+        // Google Books answers any query with its nearest books, so it gets the
+        // same guard as the free-text search: a result must name the book's author,
+        // and with no author known at all only a long title is searched. On the
+        // title-only retry of "Camine con gusto" by The Arthritis Foundation, the
+        // unchecked first result was another author's "Rota se camina igual".
         // Escape title and author individually; keep intitle:/inauthor: operators
         // and + separator as literal characters in the URL.
+        var requiredAuthor = !string.IsNullOrEmpty(author) ? author : knownAuthor;
+        if (string.IsNullOrEmpty(requiredAuthor) && BookNameParser.WordCount(title) < MinFreeTextTitleWords)
+        {
+            return null;
+        }
+
         var q = !string.IsNullOrEmpty(author)
             ? $"intitle:{Uri.EscapeDataString(title)}+inauthor:{Uri.EscapeDataString(author)}"
             : Uri.EscapeDataString(title);
 
-        return await TryGoogleBooksAsync(q, title, ctx, ct).ConfigureAwait(false);
+        return await TryGoogleBooksAsync(q, requiredAuthor, title, ctx, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -678,9 +688,9 @@ public class OnlineCoverFetcher
             ct).ConfigureAwait(false);
     }
 
-    private static IEnumerable<string> AuthorsOf(JsonElement book)
+    private static IEnumerable<string> AuthorsOf(JsonElement book, string property = "author_name")
     {
-        if (book.TryGetProperty("author_name", out var names) && names.ValueKind == JsonValueKind.Array)
+        if (book.TryGetProperty(property, out var names) && names.ValueKind == JsonValueKind.Array)
         {
             foreach (var name in names.EnumerateArray())
             {
@@ -693,7 +703,7 @@ public class OnlineCoverFetcher
     }
 
     private async Task<(MemoryStream Stream, ImageFormat Format)?> TryGoogleBooksAsync(
-        string q, string title, LookupContext ctx, CancellationToken ct)
+        string q, string? requiredAuthor, string title, LookupContext ctx, CancellationToken ct)
     {
         var key = GoogleBooksApiKeySource();
         if (IsGoogleBooksPaused(key))
@@ -731,6 +741,7 @@ public class OnlineCoverFetcher
             foreach (var item in items.EnumerateArray())
             {
                 if (item.TryGetProperty("volumeInfo", out var vi)
+                    && (requiredAuthor == null || BookNameParser.SharesAuthorName(AuthorsOf(vi, "authors"), requiredAuthor))
                     && vi.TryGetProperty("imageLinks", out var links))
                 {
                     // Prefer larger images first
@@ -770,20 +781,27 @@ public class OnlineCoverFetcher
             return null;
         }
 
-        // Upgrade to highest resolution: zoom=0, remove page curl effect
-        var highResUrl = thumbnailUrl
-            .Replace("zoom=1", "zoom=0")
-            .Replace("zoom=5", "zoom=0")
-            .Replace("&edge=curl", "");
-
-        // Upgrade HTTP to HTTPS
-        if (highResUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+        // Without the page curl, and over HTTPS.
+        var givenUrl = thumbnailUrl.Replace("&edge=curl", "");
+        if (givenUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
         {
-            highResUrl = string.Concat("https://", highResUrl.AsSpan(7));
+            givenUrl = string.Concat("https://", givenUrl.AsSpan(7));
         }
 
+        // zoom=0 asks for the largest scan. For some volumes it answers with the
+        // "image not available" picture or a strip of the title page, which
+        // ValidateImage rejects; the link the API gave is then the cover.
+        var highResUrl = givenUrl.Replace("zoom=1", "zoom=0").Replace("zoom=5", "zoom=0");
         _logger.LogDebug("Google Books cover URL: {Url}", highResUrl);
-        return await TryCoverUrlAsync(highResUrl, "Google Books", CatalogueSource.GoogleBooks, ctx, ct).ConfigureAwait(false);
+        var cover = await TryCoverUrlAsync(highResUrl, "Google Books", CatalogueSource.GoogleBooks, ctx, ct).ConfigureAwait(false);
+        if (cover == null
+            && !string.Equals(highResUrl, givenUrl, StringComparison.Ordinal)
+            && !IsGoogleBooksPaused(key))
+        {
+            cover = await TryCoverUrlAsync(givenUrl, "Google Books", CatalogueSource.GoogleBooks, ctx, ct).ConfigureAwait(false);
+        }
+
+        return cover;
     }
 
     /// <summary>
@@ -1010,6 +1028,13 @@ public class OnlineCoverFetcher
         if (format == null)
         {
             _logger.LogDebug("{Source}: unrecognized image format, skipping", source);
+            return null;
+        }
+
+        var problem = CoverImageCheck.Problem(data, offset);
+        if (problem != null)
+        {
+            _logger.LogDebug("{Source}: not a cover, {Problem}", source, problem);
             return null;
         }
 
