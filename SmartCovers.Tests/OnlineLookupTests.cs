@@ -279,9 +279,9 @@ public class OnlineLookupTests
             GoogleBooksApiKeySource = () => key
         };
 
-        await fetcher.LookupAsync(new BookQuery("Quiet Harbour", null, []), CancellationToken.None);
+        await fetcher.LookupAsync(new BookQuery("Quiet Harbour", "Ana Ruiz", []), CancellationToken.None);
         key = "my-key";
-        await fetcher.LookupAsync(new BookQuery("Distant Shore", null, []), CancellationToken.None);
+        await fetcher.LookupAsync(new BookQuery("Distant Shore", "Ana Ruiz", []), CancellationToken.None);
 
         Assert.Contains(handler.RequestedUrls, u => u.Contains("googleapis.com", StringComparison.Ordinal) && u.Contains("key=my-key", StringComparison.Ordinal));
     }
@@ -364,7 +364,7 @@ public class OnlineLookupTests
 
         await fetcher.LookupAsync(new BookQuery("Quiet Harbour", null, ["9788487136023"]), CancellationToken.None);
         var before = handler.RequestedUrls.Count(u => u.Contains("openlibrary.org", StringComparison.Ordinal));
-        var second = await fetcher.LookupAsync(new BookQuery("Distant Shore", null, []), CancellationToken.None);
+        var second = await fetcher.LookupAsync(new BookQuery("Distant Shore", "Ana Ruiz", []), CancellationToken.None);
 
         Assert.False(second.NetworkError);
         Assert.True(handler.RequestedUrls.Count(u => u.Contains("openlibrary.org", StringComparison.Ordinal)) > before);
@@ -443,7 +443,7 @@ public class OnlineLookupTests
         handler.When(url => url.Contains("googleapis.com/books", StringComparison.Ordinal), NotJson);
         handler.WhenUrlContains("openlibrary.org/search", new { docs = Array.Empty<object>() });
 
-        var lookup = await Fetcher(handler).LookupAsync(new BookQuery("Archivística en Navarra", null, []), CancellationToken.None);
+        var lookup = await Fetcher(handler).LookupAsync(new BookQuery("Archivística en Navarra", "Ana Ruiz", []), CancellationToken.None);
 
         Assert.Null(lookup.Cover);
         Assert.Contains(handler.RequestedUrls, u => u.Contains("googleapis.com/books", StringComparison.Ordinal));

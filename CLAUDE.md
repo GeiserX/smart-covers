@@ -105,7 +105,7 @@ Jellyfin's built-in Image Extractor uses ffmpeg to decode embedded artwork. This
 
 `OnlineCoverFetcher.ParseBookInfo()` cleans audiobook filenames — strips format tags `(Mp3)`, locale tags `[Castellano]`, Audible codes, year suffixes, series indicators. Extracts author from `(year, author)` pattern. Splits on last ` - ` for `Title - Author`.
 
-Search order: Open Library (title + author) → Google Books (highest resolution) → Open Library (title only). No API keys. Static `HttpClient` with `SocketsHttpHandler`, 15s timeout. Images <1000 bytes rejected as placeholders. No API key required; an optional Google Books key avoids its shared quota.
+Search order: Open Library (title + author) → Google Books (highest resolution) → Open Library (title only). Static `HttpClient` with `SocketsHttpHandler`, 15s timeout. Images <1000 bytes rejected as placeholders; `CoverImageCheck` rejects any image wider than 1.5x its height and Google's "image not available" picture (difference hash). Google Books results must name the book's author, like Open Library free text. No API key required; an optional Google Books key avoids its shared quota.
 
 ## Configuration
 

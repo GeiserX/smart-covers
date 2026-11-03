@@ -151,6 +151,7 @@ public class HttpFetchTests
                 {
                     volumeInfo = new
                     {
+                        authors = new[] { "Author" },
                         imageLinks = new { thumbnail = "http://books.google.com/books?id=test&zoom=1" }
                     }
                 }
@@ -191,6 +192,7 @@ public class HttpFetchTests
                 {
                     volumeInfo = new
                     {
+                        authors = new[] { "Author" },
                         imageLinks = new { thumbnail = "http://books.google.com/books?id=test&zoom=1" }
                     }
                 }
@@ -242,6 +244,7 @@ public class HttpFetchTests
                 {
                     volumeInfo = new
                     {
+                        authors = new[] { "Author" },
                         imageLinks = new { large = "https://books.google.com/large?zoom=1" }
                     }
                 }
@@ -270,6 +273,7 @@ public class HttpFetchTests
                 {
                     volumeInfo = new
                     {
+                        authors = new[] { "Author" },
                         imageLinks = new { medium = "https://books.google.com/medium?zoom=5&edge=curl" }
                     }
                 }
@@ -299,6 +303,7 @@ public class HttpFetchTests
                 {
                     volumeInfo = new
                     {
+                        authors = new[] { "Author" },
                         imageLinks = new { smallThumbnail = "http://books.google.com/small?zoom=1" }
                     }
                 }
@@ -320,7 +325,7 @@ public class HttpFetchTests
         handler.AddJsonResponse("openlibrary.org/search.json", new { docs = Array.Empty<object>() });
         handler.AddJsonResponse("googleapis.com", new { totalItems = 0 });
 
-        var result = await fetcher.FetchCoverAsync("Test Book", null, CancellationToken.None);
+        var result = await fetcher.FetchCoverAsync("Test Book", "Author", CancellationToken.None);
         Assert.Null(result);
     }
 
@@ -339,6 +344,7 @@ public class HttpFetchTests
                 {
                     volumeInfo = new
                     {
+                        authors = new[] { "Author" },
                         title = "Test Book"
                         // No imageLinks
                     }
@@ -346,7 +352,7 @@ public class HttpFetchTests
             }
         });
 
-        var result = await fetcher.FetchCoverAsync("Test Book", null, CancellationToken.None);
+        var result = await fetcher.FetchCoverAsync("Test Book", "Author", CancellationToken.None);
         Assert.Null(result);
     }
 
@@ -358,7 +364,7 @@ public class HttpFetchTests
         handler.AddJsonResponse("openlibrary.org/search.json", new { docs = Array.Empty<object>() });
         handler.AddError("googleapis.com");
 
-        var result = await fetcher.FetchCoverAsync("Test Book", null, CancellationToken.None);
+        var result = await fetcher.FetchCoverAsync("Test Book", "Author", CancellationToken.None);
         Assert.Null(result);
     }
 
@@ -431,6 +437,7 @@ public class HttpFetchTests
                 {
                     volumeInfo = new
                     {
+                        authors = new[] { "Author" },
                         imageLinks = new { thumbnail = "http://books.google.com/books?id=test&zoom=1&edge=curl" }
                     }
                 }
@@ -467,13 +474,14 @@ public class HttpFetchTests
                 {
                     volumeInfo = new
                     {
+                        authors = new[] { "Author" },
                         imageLinks = new { extraSmall = "http://example.com/tiny.jpg" }
                     }
                 }
             }
         });
 
-        var result = await fetcher.FetchCoverAsync("Test Book", null, CancellationToken.None);
+        var result = await fetcher.FetchCoverAsync("Test Book", "Author", CancellationToken.None);
         Assert.Null(result);
     }
 
@@ -492,6 +500,7 @@ public class HttpFetchTests
                 {
                     volumeInfo = new
                     {
+                        authors = new[] { "Author" },
                         imageLinks = new { thumbnail = "https://books.google.com/books?id=test&zoom=1" }
                     }
                 }
@@ -503,7 +512,7 @@ public class HttpFetchTests
         badImage[0] = 0x01; badImage[1] = 0x02;
         handler.AddImageResponse("books.google.com", badImage);
 
-        var result = await fetcher.FetchCoverAsync("Test Book", null, CancellationToken.None);
+        var result = await fetcher.FetchCoverAsync("Test Book", "Author", CancellationToken.None);
         Assert.Null(result);
     }
 
@@ -571,6 +580,7 @@ public class HttpFetchTests
                 {
                     volumeInfo = new
                     {
+                        authors = new[] { "Author" },
                         imageLinks = new { thumbnail = "https://books.google.com/img?zoom=1" }
                     }
                 }
@@ -630,6 +640,7 @@ public class HttpFetchTests
                 {
                     volumeInfo = new
                     {
+                        authors = new[] { "Author" },
                         imageLinks = new { thumbnail = "https://books.google.com/img?zoom=1" }
                     }
                 }
@@ -658,7 +669,7 @@ public class HttpFetchTests
             }
         });
 
-        var result = await fetcher.FetchCoverAsync("Test Book", null, CancellationToken.None);
+        var result = await fetcher.FetchCoverAsync("Test Book", "Author", CancellationToken.None);
         Assert.Null(result);
     }
 
