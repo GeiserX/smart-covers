@@ -36,6 +36,12 @@ internal static class CoverImageCheck
     internal const int MaxPlaceholderDistance = 3;
 
     /// <summary>
+    /// The largest image, in pixels, decoded for the hash: 64 MB as RGBA. The
+    /// placeholder is 575x750; a bigger image is never it and is not decoded.
+    /// </summary>
+    internal const long MaxHashPixels = 16_000_000;
+
+    /// <summary>
     /// Why the image cannot be a cover, or null when it can. An image Skia
     /// cannot read is left to the caller.
     /// </summary>
@@ -60,7 +66,7 @@ internal static class CoverImageCheck
             return $"{width}x{height} is too wide for a cover";
         }
 
-        var hash = DifferenceHash(codec);
+        var hash = (long)width * height <= MaxHashPixels ? DifferenceHash(codec) : null;
         if (hash is { } value
             && ulong.PopCount(value ^ GooglePlaceholderHash) <= MaxPlaceholderDistance)
         {
