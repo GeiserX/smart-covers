@@ -74,11 +74,15 @@ The catalog manifest is edited by hand and never auto-committed.
 
 ## The documentation site
 
-These pages are built with MkDocs Material from `docs/` and published by the Docs workflow: every pull request
-runs the strict build, a push to `main` deploys.
+These pages are built with [Zensical](https://zensical.org/) from `docs/` and published by the Docs workflow:
+every pull request runs the strict build and the site check, a push to `main` deploys.
 
 ```bash
 pip install -r docs/requirements-docs.txt
-mkdocs build --strict
-mkdocs serve
+python -m zensical serve                    # live preview at http://localhost:8000
+python -m zensical build --clean --strict   # what CI runs, then:
+python -I .github/scripts/site-check.py site
 ```
+
+The strict build fails on a broken link or anchor. `site-check.py` fails on what the build lets through: a page
+left out of the nav, a nav entry for a missing file, a missing image, a link rooted at `/`.
